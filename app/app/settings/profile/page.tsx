@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { Camera } from 'lucide-react';
+import { CityAutocomplete } from '@/components/ui/CityAutocomplete';
 
 interface UserData {
   id: string;
@@ -230,10 +231,10 @@ export default function ProfileSettingsPage() {
 
         <div className="space-y-2">
           <Label htmlFor="city">City</Label>
-          <Input
+          <CityAutocomplete
             id="city"
             value={city}
-            onChange={(e) => setCity(e.target.value)}
+            onChange={setCity}
             placeholder="e.g. San Francisco"
           />
           <p className="text-xs text-gray-500">
