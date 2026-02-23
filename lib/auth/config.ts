@@ -10,6 +10,12 @@ const adapter = PrismaAdapter(prisma);
 export const { auth, handlers, signIn, signOut } = NextAuth({
   adapter,
   trustHost: true,
+  // Use JWT sessions - required for Credentials provider
+  // Note: Credentials provider does NOT support database sessions
+  session: {
+    strategy: 'jwt',
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+  },
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
@@ -67,17 +73,26 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       }
       return url.startsWith(baseUrl) ? url : baseUrl;
     },
-    async session({ session, user }) {
+    // JWT callback - add user id to the token
+    async jwt({ token, user }) {
+      // On initial sign in, user object is available
+      if (user) {
+        token.id = user.id;
+        token.sub = user.id; // Also set sub for consistency
+      }
+      return token;
+    },
+    // Session callback - add user id from token to session
+    async session({ session, token }) {
       if (session.user) {
-        session.user.id = user.id;
+        // Use token.id or token.sub as fallback
+        session.user.id = (token?.id as string) || (token?.sub as string);
       }
       return session;
     },
   },
   events: {
     async signIn({ user, account }) {
-      // If signing in with Google and integrations redirect is in the request,
-      // we handle this in middleware/callback redirects
       if (account?.provider === 'google' && user?.email) {
         // Google Account row is already created by the adapter
       }

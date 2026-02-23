@@ -25,6 +25,12 @@ export default async function AppLayout({
             Dashboard
           </Link>
           <Link
+            href="/app/friends"
+            className="block rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100"
+          >
+            Friends
+          </Link>
+          <Link
             href="/app/settings/integrations"
             className="block rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100"
           >

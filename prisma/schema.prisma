@@ -63,6 +63,20 @@ enum AttendeeRole {
   ATTENDEE
 }
 
+enum NotificationType {
+  EVENT_INVITE
+  JOIN_REQUEST
+  JOIN_REQUEST_APPROVED
+  JOIN_REQUEST_DENIED
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+  CANCELED
+}
+
 // ============================================================================
 // MODELS
 // ============================================================================
@@ -84,8 +98,10 @@ model User {
   receivedFriendRequests Friendship[] @relation("FriendshipAddressee")
   ownedEvents           Event[]      @relation("EventOwner")
   attendances           Attendee[]
+  notifications         Notification[]
   accounts              Account[]
   sessions              Session[]
+  joinRequests          JoinRequest[] @relation("JoinRequestRequester")
 
   @@index([email])
   @@index([username])
@@ -186,8 +202,9 @@ model Event {
   updatedAt    DateTime        @updatedAt
 
   // Relations
-  owner     User       @relation("EventOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  attendees Attendee[]
+  owner        User          @relation("EventOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  attendees    Attendee[]
+  joinRequests JoinRequest[]
 
   @@index([ownerId])
   @@index([startAt])
@@ -214,5 +231,43 @@ model Attendee {
   @@unique([eventId, userId])
   @@index([eventId])
   @@index([userId])
+  @@index([status])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType @default(EVENT_INVITE)
+  title     String
+  body      String
+  href      String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+model JoinRequest {
+  id          String            @id @default(cuid())
+  eventId     String
+  requesterId String
+  status      JoinRequestStatus @default(PENDING)
+  message     String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Relations
+  event     Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  requester User  @relation("JoinRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+
+  // Each user can only have one join request per event
+  @@unique([eventId, requesterId])
+  @@index([eventId])
+  @@index([requesterId])
   @@index([status])
 }

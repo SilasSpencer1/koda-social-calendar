@@ -7,7 +7,7 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public routes - anyone can access
-  const publicRoutes = ['/', '/login', '/signup', '/api/auth'];
+  const publicRoutes = ['/', '/login', '/signup', '/api'];
 
   const isPublicRoute = publicRoutes.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
