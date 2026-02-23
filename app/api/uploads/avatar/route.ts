@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getSession } from '@/lib/auth';
 import {
   createSupabaseServerClient,
   AVATAR_BUCKET,
@@ -39,28 +40,11 @@ function validateFile(file: File): { valid: boolean; error?: string } {
 }
 
 /**
- * Gets the authenticated user ID.
- * In production, this would use the actual auth session.
- * For development, we support a placeholder header `x-dev-user-email`.
+ * Gets the authenticated user ID from the session.
  */
-async function getAuthenticatedUserId(
-  request: NextRequest
-): Promise<string | null> {
-  // TODO: Replace with actual auth session check when auth is implemented
-  // Example with Auth.js:
-  // const session = await auth();
-  // return session?.user?.id ?? null;
-
-  // Development placeholder: check for x-dev-user-email header
-  const devUserEmail = request.headers.get('x-dev-user-email');
-  if (devUserEmail) {
-    // In a real scenario, we'd look up the user by email
-    // For now, we'll use the email as a simple user identifier
-    // This is ONLY for development testing
-    return devUserEmail;
-  }
-
-  return null;
+async function getAuthenticatedUserId(): Promise<string | null> {
+  const session = await getSession();
+  return session?.user?.id ?? null;
 }
 
 /**
@@ -82,7 +66,7 @@ async function getAuthenticatedUserId(
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
-    const userId = await getAuthenticatedUserId(request);
+    const userId = await getAuthenticatedUserId();
     if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized. Please provide authentication.' },

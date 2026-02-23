@@ -208,7 +208,7 @@ export function EventDetailsPopover({
               variant="default"
               size="sm"
               onClick={onViewDetails}
-              className="flex-1 bg-blue-600 hover:bg-blue-700"
+              className="flex-1"
             >
               View Details
             </Button>

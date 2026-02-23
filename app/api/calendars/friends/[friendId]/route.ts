@@ -1,94 +1,90 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
-import {
-  getFriendCalendarPermission,
-  filterEventsForViewer,
-} from '@/lib/policies/calendarAccess';
 
 export async function GET(
-  req: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ friendId: string }> }
 ) {
   try {
-    // Authenticate
     const session = await getSession();
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const viewerId = session.user.id;
-    const ownerId = (await params).friendId;
+    const { friendId } = await params;
+    const userId = session.user.id;
 
-    // Validate that owner exists
-    const owner = await prisma.user.findUnique({
-      where: { id: ownerId },
-      select: { id: true },
+    // Verify friendship exists and calendar is viewable
+    const friendship = await prisma.friendship.findFirst({
+      where: {
+        OR: [
+          { requesterId: userId, addresseeId: friendId },
+          { requesterId: friendId, addresseeId: userId },
+        ],
+        status: 'ACCEPTED',
+        canViewCalendar: true,
+      },
     });
 
-    if (!owner) {
+    if (!friendship) {
+      return NextResponse.json(
+        {
+          error: 'Not authorized to view this calendar',
+          permission: { allowed: false, detailLevel: null },
+        },
+        { status: 403 }
+      );
+    }
+
+    const detailLevel = friendship.detailLevel;
+
+    // Get friend info
+    const friend = await prisma.user.findUnique({
+      where: { id: friendId },
+      select: { id: true, name: true, username: true, avatarUrl: true },
+    });
+
+    if (!friend) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Check calendar permission
-    const permission = await getFriendCalendarPermission(ownerId, viewerId);
-    if (!permission.allowed) {
-      // Return 403 to avoid revealing whether the user/friendship exists
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
-    }
-
     // Parse date range from query params
-    const searchParams = req.nextUrl.searchParams;
-    const fromParam = searchParams.get('from');
-    const toParam = searchParams.get('to');
+    const url = new URL(request.url);
+    const from = url.searchParams.get('from');
+    const to = url.searchParams.get('to');
 
-    if (!fromParam || !toParam) {
-      return NextResponse.json(
-        { error: 'Missing required query parameters: from, to (ISO format)' },
-        { status: 400 }
-      );
+    let startDate: Date;
+    let endDate: Date;
+
+    if (from && to) {
+      startDate = new Date(from);
+      endDate = new Date(to);
+    } else {
+      // Default to current week (Mon-Sun)
+      const now = new Date();
+      const day = now.getDay();
+      const diffToMon = day === 0 ? -6 : 1 - day;
+      startDate = new Date(now);
+      startDate.setDate(now.getDate() + diffToMon);
+      startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(startDate);
+      endDate.setDate(startDate.getDate() + 6);
+      endDate.setHours(23, 59, 59, 999);
     }
 
-    let from: Date;
-    let to: Date;
-
-    try {
-      from = new Date(fromParam);
-      to = new Date(toParam);
-
-      if (isNaN(from.getTime()) || isNaN(to.getTime())) {
-        throw new Error('Invalid date');
-      }
-
-      if (from >= to) {
-        return NextResponse.json(
-          { error: 'from must be before to' },
-          { status: 400 }
-        );
-      }
-    } catch {
-      return NextResponse.json(
-        {
-          error:
-            'Invalid date format. Use ISO format (e.g., 2026-02-05T00:00:00Z)',
-        },
-        { status: 400 }
-      );
-    }
-
-    // Fetch events in the date range
+    // Fetch events
     const events = await prisma.event.findMany({
       where: {
-        ownerId,
-        startAt: {
-          gte: from,
-          lt: to,
-        },
+        ownerId: friendId,
+        startAt: { lte: endDate },
+        endAt: { gte: startDate },
+        visibility: { in: ['FRIENDS', 'PUBLIC'] },
       },
       select: {
         id: true,
         title: true,
+        description: true,
         startAt: true,
         endAt: true,
         locationName: true,
@@ -97,18 +93,25 @@ export async function GET(
       orderBy: { startAt: 'asc' },
     });
 
-    // Filter and redact based on permission
-    const redactedEvents = filterEventsForViewer(events, permission);
+    const redactedEvents = events.map((e) => ({
+      id: e.id,
+      title: detailLevel === 'BUSY_ONLY' ? 'Busy' : e.title,
+      description: detailLevel === 'BUSY_ONLY' ? null : e.description,
+      startAt: e.startAt,
+      endAt: e.endAt,
+      locationName: detailLevel === 'BUSY_ONLY' ? null : e.locationName,
+      visibility: e.visibility,
+      redacted: detailLevel === 'BUSY_ONLY',
+    }));
 
     return NextResponse.json({
+      friend,
       events: redactedEvents,
-      permission: {
-        allowed: permission.allowed,
-        detailLevel: permission.detailLevel,
-      },
+      permission: { allowed: true, detailLevel },
+      weekStart: startDate.toISOString(),
     });
   } catch (error) {
-    console.error('Error fetching friend calendar:', error);
+    console.error('[GET /api/calendars/friends]', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

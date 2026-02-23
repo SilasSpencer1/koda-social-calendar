@@ -255,6 +255,54 @@ async function main() {
   });
   console.log('  Created attendee for Dentist Appointment');
 
+  // ---------------------------------------------------------------------------
+  // Notifications — so the notification center has content to show
+  // ---------------------------------------------------------------------------
+
+  // Clean existing notifications for seed users
+  await prisma.notification.deleteMany({
+    where: { userId: { in: [alice.id, bob.id, charlie.id] } },
+  });
+
+  // Alice has a pending invite to Bob's Team Lunch → create notification
+  await prisma.notification.create({
+    data: {
+      userId: alice.id,
+      type: 'EVENT_INVITE',
+      title: 'You were invited to an event',
+      body: `Bob Smith invited you to "${teamLunch.title}"`,
+      href: `/app/events/${teamLunch.id}`,
+      isRead: false,
+    },
+  });
+  console.log('  Created notification: Alice invited to Team Lunch');
+
+  // Bob gets a join request notification (from Charlie)
+  await prisma.notification.create({
+    data: {
+      userId: bob.id,
+      type: 'JOIN_REQUEST',
+      title: 'New join request',
+      body: `Charlie Brown wants to join "${coffeeDate.title}"`,
+      href: `/app/events/${coffeeDate.id}`,
+      isRead: false,
+    },
+  });
+  console.log('  Created notification: Bob has a join request');
+
+  // Alice also got an older read notification
+  await prisma.notification.create({
+    data: {
+      userId: alice.id,
+      type: 'JOIN_REQUEST_APPROVED',
+      title: 'Join request approved',
+      body: 'Your request to join "Friday Hangout" was approved!',
+      href: null,
+      isRead: true,
+    },
+  });
+  console.log('  Created notification: Alice past approval (read)');
+
   console.log('Seed completed successfully!');
 }
 

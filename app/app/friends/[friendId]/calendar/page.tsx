@@ -1,266 +1,162 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { ChevronLeft } from 'lucide-react';
+import { CalendarGrid } from '@/components/calendar/CalendarGrid';
 
-interface RedactedEvent {
+interface CalendarEvent {
   id: string;
+  title: string;
+  description: string | null;
   startAt: string;
   endAt: string;
-  title: string;
-  locationName?: string | null;
+  locationName: string | null;
+  visibility: string;
   redacted: boolean;
 }
 
-interface CalendarPermission {
-  allowed: boolean;
-  detailLevel: 'BUSY_ONLY' | 'DETAILS' | null;
+interface FriendInfo {
+  id: string;
+  name: string;
+  username: string | null;
+  avatarUrl: string | null;
+}
+
+function getWeekStart(base: Date): Date {
+  const d = new Date(base);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
 export default function FriendCalendarPage() {
   const params = useParams();
   const friendId = params.friendId as string;
 
-  const [events, setEvents] = useState<RedactedEvent[]>([]);
-  const [permission, setPermission] = useState<CalendarPermission | null>(null);
+  const [friend, setFriend] = useState<FriendInfo | null>(null);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dateRange, setDateRange] = useState<{
-    from: string;
-    to: string;
-  } | null>(null);
+  const [detailLevel, setDetailLevel] = useState<string | null>(null);
 
-  // Helper function to calculate this week's date range
-  const getThisWeekDateRange = () => {
-    const now = new Date();
-    const sunday = new Date(now);
-    sunday.setDate(now.getDate() - now.getDay());
-    sunday.setHours(0, 0, 0, 0);
+  const fetchCalendar = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
 
-    const saturday = new Date(sunday);
-    saturday.setDate(sunday.getDate() + 6);
-    saturday.setHours(23, 59, 59, 999);
+      const res = await fetch(
+        `/api/calendars/friends/${encodeURIComponent(friendId)}?from=${weekStart.toISOString()}&to=${weekEnd.toISOString()}`
+      );
 
-    return {
-      from: sunday.toISOString(),
-      to: saturday.toISOString(),
-    };
-  };
-
-  // Initialize date range to this week (Sunday to Saturday)
-  useEffect(() => {
-    setDateRange(getThisWeekDateRange());
-  }, []);
-
-  // Fetch events when date range changes
-  useEffect(() => {
-    if (!dateRange) return;
-
-    const fetchEvents = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const response = await fetch(
-          `/api/calendars/friends/${encodeURIComponent(friendId)}?from=${encodeURIComponent(
-            dateRange.from
-          )}&to=${encodeURIComponent(dateRange.to)}`
-        );
-
-        if (!response.ok) {
-          if (response.status === 403) {
-            setError('You do not have permission to view this calendar.');
-          } else if (response.status === 404) {
-            setError('Friend or calendar not found.');
-          } else {
-            setError('Failed to load calendar events.');
-          }
-          setEvents([]);
-          setPermission(null);
-          return;
-        }
-
-        const data = await response.json();
-        setEvents(data.events || []);
-        setPermission(data.permission);
-      } catch (err) {
-        console.error('Error fetching calendar:', err);
-        setError('An error occurred while loading the calendar.');
-        setEvents([]);
-        setPermission(null);
-      } finally {
-        setLoading(false);
+      if (!res.ok) {
+        if (res.status === 403)
+          setError("You don't have permission to view this calendar.");
+        else if (res.status === 404) setError('Friend not found.');
+        else setError('Failed to load calendar.');
+        return;
       }
-    };
 
-    fetchEvents();
-  }, [friendId, dateRange]);
+      const data = await res.json();
+      setFriend(data.friend);
+      setDetailLevel(data.permission?.detailLevel ?? null);
+      setEvents(data.events || []);
+    } catch {
+      setError('An error occurred while loading the calendar.');
+    } finally {
+      setLoading(false);
+    }
+  }, [friendId, weekStart]);
 
-  const handlePreviousWeek = () => {
-    if (!dateRange) return;
-    const from = new Date(dateRange.from);
-    from.setDate(from.getDate() - 7);
-    const to = new Date(dateRange.to);
-    to.setDate(to.getDate() - 7);
-    setDateRange({
-      from: from.toISOString(),
-      to: to.toISOString(),
-    });
-  };
+  useEffect(() => {
+    fetchCalendar();
+  }, [fetchCalendar]);
 
-  const handleNextWeek = () => {
-    if (!dateRange) return;
-    const from = new Date(dateRange.from);
-    from.setDate(from.getDate() + 7);
-    const to = new Date(dateRange.to);
-    to.setDate(to.getDate() + 7);
-    setDateRange({
-      from: from.toISOString(),
-      to: to.toISOString(),
-    });
-  };
-
-  const handleThisWeek = () => {
-    setDateRange(getThisWeekDateRange());
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
-
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  };
+  // Map API events to CalendarGrid format
+  const gridEvents = events.map((e) => ({
+    id: e.id,
+    title: e.title,
+    startAt:
+      typeof e.startAt === 'string'
+        ? e.startAt
+        : new Date(e.startAt).toISOString(),
+    endAt:
+      typeof e.endAt === 'string' ? e.endAt : new Date(e.endAt).toISOString(),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    description: e.description,
+    locationName: e.locationName,
+    visibility: e.visibility,
+    status: 'SCHEDULED',
+  }));
 
   return (
-    <div className="max-w-4xl">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">Friend Calendar</h1>
+    <div className="mx-auto max-w-6xl">
+      {/* Header */}
+      <div className="mb-6 flex items-center gap-4">
         <Link
           href="/app/friends"
-          className="text-sm text-blue-600 hover:text-blue-700"
+          className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
         >
-          ← Back to Friends
+          <ChevronLeft className="h-4 w-4" />
+          Friends
         </Link>
+
+        {friend && (
+          <div className="flex items-center gap-3">
+            {friend.avatarUrl ? (
+              <img
+                src={friend.avatarUrl}
+                alt={friend.name}
+                className="h-8 w-8 rounded-full object-cover"
+              />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-blue-600 text-xs font-bold text-white">
+                {friend.name?.charAt(0)?.toUpperCase() || '?'}
+              </div>
+            )}
+            <div>
+              <h1 className="text-lg font-bold text-gray-900">
+                {friend.name}&apos;s Calendar
+              </h1>
+              {detailLevel === 'BUSY_ONLY' && (
+                <p className="text-xs text-gray-400">Viewing busy/free only</p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {error ? (
-        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-red-800">
           {error}
         </div>
-      ) : null}
-
-      {permission && !permission.allowed ? (
-        <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-6 text-center">
-          <p className="text-yellow-800">
-            You do not have permission to view this calendar.
-          </p>
+      ) : loading ? (
+        <div className="rounded-xl border border-gray-200 bg-white p-12 text-center">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+          <p className="mt-3 text-sm text-gray-500">Loading calendar...</p>
         </div>
       ) : (
-        <>
-          {/* Date range controls */}
-          <div className="mb-6 flex items-center justify-between rounded-lg border border-gray-200 bg-white p-4">
-            <div className="flex gap-2">
-              <button
-                onClick={handlePreviousWeek}
-                disabled={loading}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                ← Previous Week
-              </button>
-              <button
-                onClick={handleThisWeek}
-                disabled={loading}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                This Week
-              </button>
-              <button
-                onClick={handleNextWeek}
-                disabled={loading}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                Next Week →
-              </button>
-            </div>
-            {dateRange && (
-              <div className="text-sm text-gray-600">
-                {formatDate(dateRange.from)} - {formatDate(dateRange.to)}
-              </div>
-            )}
-          </div>
-
-          {/* Detail level indicator */}
-          {permission && (
-            <div className="mb-6 rounded-lg bg-blue-50 p-4 text-sm text-blue-800">
-              Viewing as:{' '}
-              <span className="font-medium">
-                {permission.detailLevel === 'DETAILS'
-                  ? 'Full details'
-                  : 'Busy only'}
-              </span>
-            </div>
-          )}
-
-          {/* Events list */}
-          {loading ? (
-            <div className="rounded-lg border border-gray-200 bg-white p-8 text-center">
-              <p className="text-gray-600">Loading calendar...</p>
-            </div>
-          ) : events.length === 0 ? (
-            <div className="rounded-lg border border-gray-200 bg-white p-8 text-center">
-              <p className="text-gray-600">
-                No events scheduled for this period.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {events.map((event) => (
-                <div
-                  key={event.id}
-                  className={`rounded-lg p-4 ${
-                    event.redacted
-                      ? 'border-l-4 border-l-gray-400 bg-gray-50'
-                      : 'border-l-4 border-l-blue-500 bg-blue-50'
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900">
-                        {event.title}
-                      </h3>
-                      <p className="mt-1 text-sm text-gray-600">
-                        {formatDate(event.startAt)} •{' '}
-                        {formatTime(event.startAt)} - {formatTime(event.endAt)}
-                      </p>
-                      {event.locationName && !event.redacted && (
-                        <p className="mt-1 text-sm text-gray-600">
-                          Location: {event.locationName}
-                        </p>
-                      )}
-                    </div>
-                    {event.redacted && (
-                      <span className="ml-4 whitespace-nowrap rounded-full bg-gray-200 px-3 py-1 text-xs font-medium text-gray-700">
-                        Busy
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
+        <CalendarGrid
+          events={gridEvents}
+          weekStart={weekStart}
+          onPrevWeek={() => {
+            const prev = new Date(weekStart);
+            prev.setDate(prev.getDate() - 7);
+            setWeekStart(prev);
+          }}
+          onNextWeek={() => {
+            const next = new Date(weekStart);
+            next.setDate(next.getDate() + 7);
+            setWeekStart(next);
+          }}
+        />
       )}
     </div>
   );

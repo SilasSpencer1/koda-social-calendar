@@ -93,11 +93,7 @@ function LoginForm() {
           />
         </div>
 
-        <Button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-blue-600 hover:bg-blue-700"
-        >
+        <Button type="submit" disabled={loading} className="w-full">
           {loading ? 'Signing in...' : 'Sign in'}
         </Button>
       </form>

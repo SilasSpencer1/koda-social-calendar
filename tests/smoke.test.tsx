@@ -96,7 +96,7 @@ describe('Button component', () => {
   });
 
   it('renders button with icon size', () => {
-    const { container } = render(<Button size="icon">🔔</Button>);
+    const { container } = render(<Button size="icon">Bell</Button>);
     expect(container).toBeDefined();
   });
 

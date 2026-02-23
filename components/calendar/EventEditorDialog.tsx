@@ -523,7 +523,7 @@ export function EventEditorDialog({
                 size="sm"
                 onClick={handleSave}
                 disabled={saving}
-                className="bg-blue-600 hover:bg-blue-700 text-white min-w-[80px]"
+                className="min-w-[80px]"
               >
                 {saving ? 'Saving...' : isEditing ? 'Update' : 'Save'}
               </Button>

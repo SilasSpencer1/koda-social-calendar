@@ -1,6 +1,9 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/components/ui/toast';
 import { signIn } from 'next-auth/react';
 import { useEffect, useState, useCallback } from 'react';
 
@@ -25,6 +28,7 @@ interface SyncSummary {
 }
 
 export default function IntegrationsPage() {
+  const toast = useToast();
   const [state, setState] = useState<ConnectionState>({
     isConnected: false,
     connection: null,
@@ -32,7 +36,6 @@ export default function IntegrationsPage() {
   });
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
-  const [message, setMessage] = useState('');
   const [lastSync, setLastSync] = useState<SyncSummary | null>(null);
 
   const fetchConnection = useCallback(async () => {
@@ -70,21 +73,18 @@ export default function IntegrationsPage() {
     }
 
     setDisconnecting(true);
-    setMessage('');
-
     try {
       const res = await fetch('/api/integrations/google/disconnect', {
         method: 'POST',
       });
       if (!res.ok) {
-        setMessage('Failed to disconnect Google account');
+        toast('Failed to disconnect Google account', 'error');
         return;
       }
-      setMessage('Google account disconnected successfully');
+      toast('Google account disconnected');
       await fetchConnection();
-      setTimeout(() => setMessage(''), 3000);
     } catch {
-      setMessage('An error occurred while disconnecting');
+      toast('An error occurred while disconnecting', 'error');
     } finally {
       setDisconnecting(false);
     }
@@ -92,7 +92,6 @@ export default function IntegrationsPage() {
 
   const handleSync = async () => {
     setSyncing(true);
-    setMessage('');
     setLastSync(null);
 
     try {
@@ -102,35 +101,36 @@ export default function IntegrationsPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setMessage(data.error || 'Sync failed');
+        toast(data.error || 'Sync failed', 'error');
         return;
       }
 
       setLastSync(data);
-      setMessage('Sync completed successfully');
+      toast('Sync completed');
       await fetchConnection();
-      setTimeout(() => setMessage(''), 5000);
     } catch {
-      setMessage('An error occurred during sync');
+      toast('An error occurred during sync', 'error');
     } finally {
       setSyncing(false);
     }
   };
 
-  const handleTogglePush = async () => {
+  const handleTogglePush = async (checked: boolean) => {
     try {
-      const newValue = !state.connection?.pushEnabled;
       const res = await fetch('/api/integrations/google/connection', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pushEnabled: newValue }),
+        body: JSON.stringify({ pushEnabled: checked }),
       });
 
       if (res.ok) {
         await fetchConnection();
+        toast(checked ? 'Push to Google enabled' : 'Push to Google disabled');
+      } else {
+        toast('Failed to update setting', 'error');
       }
     } catch {
-      setMessage('Failed to update push setting');
+      toast('Failed to update setting', 'error');
     }
   };
 
@@ -140,31 +140,28 @@ export default function IntegrationsPage() {
     return date.toLocaleString();
   };
 
+  if (state.loading) {
+    return (
+      <div className="space-y-6">
+        <div className="h-6 w-32 animate-pulse rounded bg-gray-200" />
+        <div className="h-48 animate-pulse rounded-lg bg-gray-200" />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-8">
+    <div className="max-w-lg space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Integrations</h1>
-        <p className="mt-2 text-gray-600">
-          Connect external services to sync your calendar and data
+        <h2 className="text-lg font-semibold text-gray-900">Integrations</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Connect external services to sync your calendar and data.
         </p>
       </div>
 
-      {message && (
-        <div
-          className={`rounded-lg p-4 ${
-            message.includes('successfully') || message.includes('completed')
-              ? 'bg-green-50 text-green-800'
-              : 'bg-red-50 text-red-800'
-          }`}
-        >
-          {message}
-        </div>
-      )}
-
       {/* Google Calendar Card */}
-      <div className="rounded-lg bg-white p-6 shadow-sm border border-gray-200">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
+      <div className="rounded-lg border border-gray-200 bg-white">
+        <div className="p-5">
+          <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50">
                 <svg
@@ -176,118 +173,90 @@ export default function IntegrationsPage() {
                 </svg>
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">
+                <h3 className="text-sm font-semibold text-gray-900">
                   Google Calendar
-                </h2>
-                <p className="text-sm text-gray-600">
+                </h3>
+                <p className="text-xs text-gray-500">
                   2-way sync between Koda and Google Calendar
                 </p>
               </div>
             </div>
 
-            <div className="mt-4 flex items-center gap-3">
-              <div className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1">
-                <div
-                  className={`h-2 w-2 rounded-full mr-2 ${
-                    state.isConnected ? 'bg-green-500' : 'bg-gray-400'
-                  }`}
-                />
-                <span className="text-sm font-medium text-gray-700">
-                  {state.loading
-                    ? 'Checking...'
-                    : state.isConnected
-                      ? 'Connected'
-                      : 'Not connected'}
-                </span>
-              </div>
-              {state.connection?.lastSyncedAt && (
-                <span className="text-xs text-gray-500">
-                  Last synced: {formatLastSynced(state.connection.lastSyncedAt)}
-                </span>
-              )}
+            <div className="flex items-center gap-2">
+              <div
+                className={`h-2 w-2 rounded-full ${
+                  state.isConnected ? 'bg-green-500' : 'bg-gray-400'
+                }`}
+              />
+              <span className="text-xs font-medium text-gray-600">
+                {state.isConnected ? 'Connected' : 'Not connected'}
+              </span>
             </div>
           </div>
 
-          <div className="ml-4 flex flex-col gap-2">
-            {state.loading ? (
-              <Button disabled className="bg-gray-400">
-                Loading...
-              </Button>
-            ) : state.isConnected ? (
-              <>
-                <Button
-                  onClick={handleSync}
-                  disabled={syncing}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  {syncing ? 'Syncing...' : 'Sync Now'}
+          {/* Last synced */}
+          {state.connection?.lastSyncedAt && (
+            <p className="mt-3 text-xs text-gray-400">
+              Last synced: {formatLastSynced(state.connection.lastSyncedAt)}
+            </p>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="border-t border-gray-100 px-5 py-4">
+          {state.isConnected ? (
+            <div className="space-y-4">
+              {/* Push toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="push-google">
+                    Push Koda events to Google
+                  </Label>
+                  <p className="text-xs text-gray-500">
+                    Koda-created events will sync to your Google Calendar
+                  </p>
+                </div>
+                <Switch
+                  id="push-google"
+                  checked={state.connection?.pushEnabled ?? false}
+                  onCheckedChange={handleTogglePush}
+                />
+              </div>
+
+              {/* Sync window info */}
+              <p className="text-xs text-gray-400">
+                Sync window: {state.connection?.syncWindowPastDays ?? 30} days
+                past / {state.connection?.syncWindowFutureDays ?? 90} days
+                future
+              </p>
+
+              {/* Buttons */}
+              <div className="flex gap-2">
+                <Button onClick={handleSync} disabled={syncing} size="sm">
+                  {syncing ? 'Syncing...' : 'Sync now'}
                 </Button>
                 <Button
                   onClick={handleDisconnect}
                   disabled={disconnecting}
+                  size="sm"
                   variant="outline"
                   className="border-red-300 text-red-600 hover:bg-red-50"
                 >
                   {disconnecting ? 'Disconnecting...' : 'Disconnect'}
                 </Button>
-              </>
-            ) : (
-              <Button
-                onClick={handleConnect}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                Connect
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* Sync settings (only when connected) */}
-        {state.isConnected && (
-          <div className="mt-6 border-t border-gray-100 pt-4 space-y-4">
-            {/* Push toggle */}
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-900">
-                  Push Koda events to Google
-                </p>
-                <p className="text-xs text-gray-500">
-                  When enabled, Koda-created events will sync to your Google
-                  Calendar
-                </p>
               </div>
-              <button
-                onClick={handleTogglePush}
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                  state.connection?.pushEnabled ? 'bg-blue-600' : 'bg-gray-200'
-                }`}
-                role="switch"
-                aria-checked={state.connection?.pushEnabled ?? false}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    state.connection?.pushEnabled
-                      ? 'translate-x-5'
-                      : 'translate-x-0'
-                  }`}
-                />
-              </button>
             </div>
-
-            {/* Sync window info */}
-            <div className="text-xs text-gray-500">
-              Sync window: {state.connection?.syncWindowPastDays ?? 30} days
-              past
-              {' / '}
-              {state.connection?.syncWindowFutureDays ?? 90} days future
-            </div>
-          </div>
-        )}
+          ) : (
+            <Button onClick={handleConnect} className="">
+              Connect Google Calendar
+            </Button>
+          )}
+        </div>
 
         {/* Sync results */}
         {lastSync && (
-          <div className="mt-4 rounded-lg bg-blue-50 p-3">
-            <p className="text-sm font-medium text-blue-900">Sync Results</p>
+          <div className="border-t border-gray-100 px-5 py-3">
+            <p className="text-xs font-medium text-blue-900">Sync Results</p>
             <div className="mt-1 grid grid-cols-4 gap-2 text-xs text-blue-800">
               <div>Pulled: {lastSync.pulled}</div>
               <div>Pushed: {lastSync.pushed}</div>
@@ -295,9 +264,9 @@ export default function IntegrationsPage() {
               <div>Deleted: {lastSync.deleted}</div>
             </div>
             {lastSync.errors.length > 0 && (
-              <div className="mt-2 text-xs text-red-600">
+              <p className="mt-1 text-xs text-red-600">
                 {lastSync.errors.length} error(s) occurred during sync
-              </div>
+              </p>
             )}
           </div>
         )}

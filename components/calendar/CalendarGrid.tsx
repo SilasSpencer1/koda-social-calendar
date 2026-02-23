@@ -5,11 +5,28 @@
 
 'use client';
 
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  GRID_START_HOUR,
+  HOURS,
+  TOTAL_MINUTES,
+  getEventPosition,
+  eventOverlapsDay,
+  isAllDayEvent,
+  allDayEventOverlapsDay,
+} from '@/lib/calendar/grid';
 
 // ── Types ────────────────────────────────────────────────────
+
+interface EventAttendee {
+  id: string;
+  userId: string | null;
+  status: 'INVITED' | 'GOING' | 'DECLINED';
+  role: 'HOST' | 'ATTENDEE';
+  anonymity?: string;
+}
 
 interface EventBlock {
   id: string;
@@ -24,12 +41,14 @@ interface EventBlock {
   visibility?: string;
   coverMode?: string;
   syncToGoogle?: boolean;
-  attendees?: unknown[];
+  attendees?: EventAttendee[];
 }
 
 interface CalendarGridProps {
   events: EventBlock[];
   weekStart: Date;
+  /** Current user ID — used to detect pending invite status for styling */
+  currentUserId?: string | null;
   onEventClick?: (event: EventBlock, anchorX: number, anchorY: number) => void;
   onEmptyCellClick?: (
     startDate: Date,
@@ -42,10 +61,31 @@ interface CalendarGridProps {
   onNextWeek?: () => void;
 }
 
-// ── Constants ────────────────────────────────────────────────
+/**
+ * Pre-compute the set of event IDs where the current user has a pending
+ * INVITED attendee status.  O(events + attendees) up-front instead of
+ * O(events * attendees) per render when called inside a map loop.
+ */
+function buildPendingInviteSet(
+  events: EventBlock[],
+  currentUserId?: string | null
+): Set<string> {
+  const set = new Set<string>();
+  if (!currentUserId) return set;
+  for (const event of events) {
+    if (!event.attendees) continue;
+    for (const a of event.attendees) {
+      if (a.userId === currentUserId && a.status === 'INVITED') {
+        set.add(event.id);
+        break; // one match per event is enough
+      }
+    }
+  }
+  return set;
+}
 
-const HOURS = Array.from({ length: 15 }, (_, i) => i + 8); // 8am – 10pm
-const TOTAL_MINUTES = 15 * 60; // 15 hours
+// ── Constants (component-specific) ───────────────────────────
+
 const HOUR_HEIGHT = 60; // px per hour in the grid
 
 function formatTime(date: Date): string {
@@ -54,19 +94,6 @@ function formatTime(date: Date): string {
     minute: '2-digit',
     hour12: true,
   });
-}
-
-function getEventPosition(startAt: Date, endAt: Date) {
-  const dayStart = new Date(startAt);
-  dayStart.setHours(8, 0, 0, 0);
-
-  const offsetMinutes = (startAt.getTime() - dayStart.getTime()) / (1000 * 60);
-  const durationMinutes = (endAt.getTime() - startAt.getTime()) / (1000 * 60);
-
-  const topPercent = (offsetMinutes / TOTAL_MINUTES) * 100;
-  const heightPercent = (durationMinutes / TOTAL_MINUTES) * 100;
-
-  return { topPercent, heightPercent };
 }
 
 function formatWeekLabel(weekStart: Date): string {
@@ -90,6 +117,7 @@ function formatWeekLabel(weekStart: Date): string {
 export function CalendarGrid({
   events,
   weekStart,
+  currentUserId,
   onEventClick,
   onEmptyCellClick,
   onCreateClick,
@@ -99,6 +127,26 @@ export function CalendarGrid({
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  // Pre-compute pending invite set once per render instead of per event
+  const pendingInviteIds = useMemo(
+    () => buildPendingInviteSet(events, currentUserId),
+    [events, currentUserId]
+  );
+
+  // Separate all-day events from timed events
+  const { allDayEvents, timedEvents } = useMemo(() => {
+    const allDay: EventBlock[] = [];
+    const timed: EventBlock[] = [];
+    for (const event of events) {
+      if (isAllDayEvent(event)) {
+        allDay.push(event);
+      } else {
+        timed.push(event);
+      }
+    }
+    return { allDayEvents: allDay, timedEvents: timed };
+  }, [events]);
 
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -117,7 +165,7 @@ export function CalendarGrid({
       // Map click position to hour
       const minutesFromStart = (relativeY / totalHeight) * TOTAL_MINUTES;
       const roundedMinutes = Math.floor(minutesFromStart / 30) * 30; // snap to 30-min
-      const hour = Math.floor(roundedMinutes / 60) + 8;
+      const hour = Math.floor(roundedMinutes / 60) + GRID_START_HOUR;
       const minute = roundedMinutes % 60;
 
       const clickDate = new Date(weekStart);
@@ -186,9 +234,9 @@ export function CalendarGrid({
         </div>
 
         {/* Day headers with date chips */}
-        <div className="grid grid-cols-8 gap-2">
+        <div className="grid grid-cols-[3rem_repeat(7,1fr)] gap-1">
           {/* Spacer for hour labels */}
-          <div className="w-14" />
+          <div />
           {days.map((day, idx) => {
             const date = new Date(weekStart);
             date.setDate(weekStart.getDate() + idx);
@@ -213,13 +261,49 @@ export function CalendarGrid({
             );
           })}
         </div>
+
+        {/* All-day event banners (Google Calendar style) */}
+        {allDayEvents.length > 0 && (
+          <div className="grid grid-cols-[3rem_repeat(7,1fr)] gap-1 mt-2">
+            {/* Spacer for hour labels */}
+            <div />
+            {days.map((day, idx) => {
+              const colDate = new Date(weekStart);
+              colDate.setDate(weekStart.getDate() + idx);
+              const dayAllDay = allDayEvents.filter((e) =>
+                allDayEventOverlapsDay(e, colDate)
+              );
+              return (
+                <div key={day} className="space-y-0.5">
+                  {dayAllDay.map((event) => {
+                    const pending = pendingInviteIds.has(event.id);
+                    return (
+                      <div
+                        key={event.id}
+                        data-event-block
+                        onClick={(e) => handleEventBlockClick(event, e)}
+                        className={`cursor-pointer rounded-md px-1.5 py-0.5 text-[10px] font-semibold truncate transition-all hover:brightness-110 ${
+                          pending
+                            ? 'bg-white/60 border border-dashed border-blue-400/60 text-blue-600'
+                            : 'bg-gradient-to-r from-blue-400/70 to-blue-500/60 text-white border border-white/30'
+                        }`}
+                      >
+                        {event.title}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── Time grid ───────────────────────────────────── */}
-      <div ref={gridRef} className="relative z-10 overflow-x-auto">
-        <div className="grid grid-cols-8 gap-2 min-w-max">
+      <div ref={gridRef} className="relative z-10">
+        <div className="grid grid-cols-[3rem_repeat(7,1fr)] gap-1">
           {/* Hour labels column */}
-          <div className="w-14 pt-0">
+          <div className="pt-0">
             {HOURS.map((hour) => (
               <div
                 key={hour}
@@ -235,12 +319,13 @@ export function CalendarGrid({
           {days.map((day, dayIdx) => {
             const colDate = new Date(weekStart);
             colDate.setDate(weekStart.getDate() + dayIdx);
+            colDate.setHours(0, 0, 0, 0);
             const isToday = colDate.toDateString() === today.toDateString();
 
             return (
               <div
                 key={day}
-                className={`w-32 rounded-xl overflow-hidden relative cursor-pointer transition-colors ${
+                className={`rounded-xl overflow-hidden relative cursor-pointer transition-colors ${
                   isToday
                     ? 'bg-blue-50/30 border border-blue-200/40'
                     : 'bg-white/10 border border-white/20 hover:bg-white/20'
@@ -254,28 +339,23 @@ export function CalendarGrid({
                     key={`grid-${hour}`}
                     className="absolute w-full border-b border-slate-200/30"
                     style={{
-                      top: `${((hour - 8) / 15) * 100}%`,
+                      top: `${((hour - GRID_START_HOUR) / HOURS.length) * 100}%`,
                       height: `${HOUR_HEIGHT}px`,
                     }}
                   />
                 ))}
 
-                {/* Events for this day */}
+                {/* Timed events for this day (all-day events render above) */}
                 <div className="absolute inset-0">
-                  {events
-                    .filter((event) => {
-                      const eventDate = new Date(event.startAt);
-                      return (
-                        eventDate.toDateString() === colDate.toDateString()
-                      );
-                    })
+                  {timedEvents
+                    .filter((event) => eventOverlapsDay(event, colDate))
                     .map((event) => {
                       const startTime = new Date(event.startAt);
                       const endTime = new Date(event.endAt);
-                      const { topPercent, heightPercent } = getEventPosition(
-                        startTime,
-                        endTime
-                      );
+                      const pos = getEventPosition(startTime, endTime, colDate);
+                      if (!pos) return null;
+                      const { topPercent, heightPercent } = pos;
+                      const pending = pendingInviteIds.has(event.id);
 
                       return (
                         <div
@@ -288,18 +368,34 @@ export function CalendarGrid({
                             height: `${Math.max(heightPercent, 2.5)}%`,
                           }}
                         >
-                          <div className="relative h-full bg-gradient-to-br from-blue-400/40 via-blue-500/30 to-violet-500/40 backdrop-blur-md rounded-lg border border-white/40 p-1.5 shadow-lg hover:shadow-xl hover:from-blue-400/50 hover:to-violet-500/50 transition-all duration-200 overflow-hidden group-hover:scale-[1.02] origin-top-left">
-                            {/* Glass shine effect */}
-                            <div className="absolute inset-0 bg-gradient-to-br from-white/30 to-transparent rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" />
+                          {pending ? (
+                            /* ── Pending invite: dashed outline, no fill ── */
+                            <div className="relative h-full bg-white/60 backdrop-blur-md rounded-lg border-2 border-dashed border-blue-400/60 p-1.5 hover:bg-blue-50/40 hover:border-blue-500/80 transition-all duration-200 overflow-hidden group-hover:scale-[1.02] origin-top-left">
+                              <div className="relative z-10 text-[11px] text-blue-600 font-semibold truncate leading-tight">
+                                {event.title}
+                              </div>
+                              <div className="relative z-10 text-[10px] text-blue-400 mt-0.5 leading-tight">
+                                {formatTime(startTime)} – {formatTime(endTime)}
+                              </div>
+                              <div className="relative z-10 text-[9px] text-blue-400/80 mt-0.5 italic leading-tight">
+                                Pending invite
+                              </div>
+                            </div>
+                          ) : (
+                            /* ── Accepted / owned: filled glass style ── */
+                            <div className="relative h-full bg-gradient-to-br from-blue-400/40 via-blue-500/30 to-violet-500/40 backdrop-blur-md rounded-lg border border-white/40 p-1.5 shadow-lg hover:shadow-xl hover:from-blue-400/50 hover:to-violet-500/50 transition-all duration-200 overflow-hidden group-hover:scale-[1.02] origin-top-left">
+                              {/* Glass shine effect */}
+                              <div className="absolute inset-0 bg-gradient-to-br from-white/30 to-transparent rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" />
 
-                            {/* Event content */}
-                            <div className="relative z-10 text-[11px] text-white font-semibold truncate leading-tight">
-                              {event.title}
+                              {/* Event content */}
+                              <div className="relative z-10 text-[11px] text-white font-semibold truncate leading-tight">
+                                {event.title}
+                              </div>
+                              <div className="relative z-10 text-[10px] text-white/80 mt-0.5 leading-tight">
+                                {formatTime(startTime)} – {formatTime(endTime)}
+                              </div>
                             </div>
-                            <div className="relative z-10 text-[10px] text-white/80 mt-0.5 leading-tight">
-                              {formatTime(startTime)} – {formatTime(endTime)}
-                            </div>
-                          </div>
+                          )}
                         </div>
                       );
                     })}
@@ -317,10 +413,20 @@ export function CalendarGrid({
 
 interface AgendaListProps {
   events: EventBlock[];
+  currentUserId?: string | null;
   onEventClick?: (event: EventBlock) => void;
 }
 
-export function AgendaList({ events, onEventClick }: AgendaListProps) {
+export function AgendaList({
+  events,
+  currentUserId,
+  onEventClick,
+}: AgendaListProps) {
+  const pendingInviteIds = useMemo(
+    () => buildPendingInviteSet(events, currentUserId),
+    [events, currentUserId]
+  );
+
   const today = new Date();
   const dayStart = new Date(today);
   dayStart.setHours(0, 0, 0, 0);
@@ -336,16 +442,27 @@ export function AgendaList({ events, onEventClick }: AgendaListProps) {
       {upcomingEvents.map((event) => {
         const startTime = new Date(event.startAt);
         const endTime = new Date(event.endAt);
+        const pending = pendingInviteIds.has(event.id);
 
         return (
           <div
             key={event.id}
             onClick={() => onEventClick?.(event)}
-            className="group p-4 rounded-2xl bg-white/50 backdrop-blur-md border border-white/30 hover:bg-white/70 cursor-pointer transition-all duration-300 hover:shadow-lg hover:border-white/50 hover:scale-[1.02] origin-left"
+            className={`group p-4 rounded-2xl backdrop-blur-md cursor-pointer transition-all duration-300 hover:shadow-lg hover:scale-[1.02] origin-left ${
+              pending
+                ? 'bg-white/30 border-2 border-dashed border-blue-300/50 hover:border-blue-400/70'
+                : 'bg-white/50 border border-white/30 hover:bg-white/70 hover:border-white/50'
+            }`}
           >
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-slate-900 truncate group-hover:text-blue-600 transition-colors">
+                <h3
+                  className={`font-semibold truncate transition-colors ${
+                    pending
+                      ? 'text-blue-600 group-hover:text-blue-700'
+                      : 'text-slate-900 group-hover:text-blue-600'
+                  }`}
+                >
                   {event.title}
                 </h3>
                 <p className="text-sm text-slate-600 mt-1">
@@ -357,8 +474,14 @@ export function AgendaList({ events, onEventClick }: AgendaListProps) {
                   • {formatTime(startTime)} – {formatTime(endTime)}
                 </p>
               </div>
-              <div className="px-3 py-1 rounded-full bg-blue-100/50 text-blue-700 text-xs font-semibold whitespace-nowrap">
-                {event.status || 'SCHEDULED'}
+              <div
+                className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                  pending
+                    ? 'bg-amber-100/50 text-amber-700'
+                    : 'bg-blue-100/50 text-blue-700'
+                }`}
+              >
+                {pending ? 'PENDING' : event.status || 'SCHEDULED'}
               </div>
             </div>
           </div>

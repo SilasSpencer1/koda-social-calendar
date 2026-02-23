@@ -511,11 +511,19 @@ export default function CalendarPage() {
 
       {/* Page content */}
       <div className="relative z-10 container max-w-7xl mx-auto px-4 py-12">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-slate-900 mb-2">Calendar</h1>
-          <p className="text-slate-600">
-            View and manage your events with friends
-          </p>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-slate-900 mb-2">Calendar</h1>
+            <p className="text-slate-600">
+              View and manage your events with friends
+            </p>
+          </div>
+          <button
+            onClick={openFindTime}
+            className="px-6 py-3 text-center bg-white hover:bg-slate-50 text-slate-900 font-semibold rounded-full border border-slate-200 shadow-md hover:shadow-lg transition-all duration-300"
+          >
+            Find Time
+          </button>
         </div>
 
         {loading && (
@@ -531,42 +539,31 @@ export default function CalendarPage() {
         )}
 
         {!loading && !error && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Calendar grid - main content */}
-            <div className="lg:col-span-2">
-              <CalendarGrid
+          <div className="space-y-8">
+            {/* Calendar grid - full width */}
+            <CalendarGrid
+              events={events}
+              weekStart={weekStart}
+              currentUserId={currentUserId}
+              onEventClick={(event, x, y) =>
+                handleEventClick(event as CalendarEvent, x, y)
+              }
+              onEmptyCellClick={handleEmptyCellClick}
+              onCreateClick={handleCreateClick}
+              onPrevWeek={goToPrevWeek}
+              onNextWeek={goToNextWeek}
+            />
+
+            {/* Upcoming events - below calendar */}
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900 mb-4">
+                Upcoming Events
+              </h2>
+              <AgendaList
                 events={events}
-                weekStart={weekStart}
-                onEventClick={(event, x, y) =>
-                  handleEventClick(event as CalendarEvent, x, y)
-                }
-                onEmptyCellClick={handleEmptyCellClick}
-                onCreateClick={handleCreateClick}
-                onPrevWeek={goToPrevWeek}
-                onNextWeek={goToNextWeek}
+                currentUserId={currentUserId}
+                onEventClick={(e) => handleAgendaEventClick(e as CalendarEvent)}
               />
-            </div>
-
-            {/* Agenda list - sidebar */}
-            <div className="lg:col-span-1">
-              <div className="sticky top-4">
-                <h2 className="text-xl font-semibold text-slate-900 mb-4">
-                  Upcoming Events
-                </h2>
-                <AgendaList
-                  events={events}
-                  onEventClick={(e) =>
-                    handleAgendaEventClick(e as CalendarEvent)
-                  }
-                />
-
-                <button
-                  onClick={openFindTime}
-                  className="block w-full mt-4 px-6 py-3 text-center bg-white hover:bg-slate-50 text-slate-900 font-semibold rounded-full border border-slate-200 shadow-md hover:shadow-lg transition-all duration-300"
-                >
-                  Find Time
-                </button>
-              </div>
             </div>
           </div>
         )}
