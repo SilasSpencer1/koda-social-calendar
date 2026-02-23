@@ -84,12 +84,12 @@ export async function areFriends(
  *
  * Visibility rules:
  * - PRIVATE: Only show if requester is already an accepted friend
- * - FRIENDS_ONLY: Show minimal info if accepted friend, otherwise hide
+ * - FRIENDS_ONLY: Discoverable in search (so people can send friend requests),
+ *   but calendar access is restricted to friends only (enforced separately)
  * - PUBLIC: Always show
  *
  * Additionally:
  * - If blocked, never show
- * - If blocker blocked blockee, never show
  */
 export async function canSearchSeeUser(
   searcherId: string,
@@ -102,12 +102,13 @@ export async function canSearchSeeUser(
     return false;
   }
 
-  // PUBLIC users always visible (unless blocked)
-  if (targetVisibility === 'PUBLIC') {
+  // PUBLIC and FRIENDS_ONLY users are discoverable in search so that
+  // friend requests can be sent. Calendar access is enforced separately.
+  if (targetVisibility === 'PUBLIC' || targetVisibility === 'FRIENDS_ONLY') {
     return true;
   }
 
-  // For PRIVATE and FRIENDS_ONLY, only show to accepted friends
+  // PRIVATE users only visible to accepted friends
   const isFriend = await areFriends(searcherId, targetUserId);
   return isFriend;
 }

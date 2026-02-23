@@ -1,20 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarGrid, AgendaList } from '@/components/calendar/CalendarGrid';
+import { QuickAddPopover } from '@/components/calendar/QuickAddPopover';
+import { EventEditorDialog } from '@/components/calendar/EventEditorDialog';
+import { EventDetailsPopover } from '@/components/calendar/EventDetailsPopover';
+import type { CalendarEvent, EventFormData } from '@/lib/schemas/event';
 
-interface Event {
-  id: string;
-  title: string;
-  startAt: string;
-  endAt: string;
-  timezone: string;
-  status?: string;
-}
+// ── Types ────────────────────────────────────────────────────
 
-interface Friend {
+interface FriendEntry {
   id: string;
   user: { id: string; name: string; avatarUrl: string | null };
 }
@@ -24,16 +20,56 @@ interface Slot {
   endAt: string;
 }
 
+// ── Helpers ──────────────────────────────────────────────────
+
+function getWeekStart(base: Date): Date {
+  const d = new Date(base);
+  const day = d.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + mondayOffset);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// ── Page ─────────────────────────────────────────────────────
+
 export default function CalendarPage() {
   const router = useRouter();
-  const [events, setEvents] = useState<Event[]>([]);
+
+  // ── Calendar state ─────────────────────────────────────
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()));
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // Find Time state
+  // ── Quick Add popover ──────────────────────────────────
+  const [quickAdd, setQuickAdd] = useState<{
+    startDate: Date;
+    endDate: Date;
+    anchorX: number;
+    anchorY: number;
+  } | null>(null);
+
+  // ── Event details popover ──────────────────────────────
+  const [detailsPopover, setDetailsPopover] = useState<{
+    event: CalendarEvent;
+    anchorX: number;
+    anchorY: number;
+  } | null>(null);
+
+  // ── Full editor dialog ─────────────────────────────────
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  const [editorDefaults, setEditorDefaults] = useState<{
+    start?: Date;
+    end?: Date;
+    title?: string;
+  }>({});
+
+  // ── Find Time state ────────────────────────────────────
   const [showFindTime, setShowFindTime] = useState(false);
-  const [friends, setFriends] = useState<Friend[]>([]);
+  const [friends, setFriends] = useState<FriendEntry[]>([]);
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [ftDuration, setFtDuration] = useState(60);
   const [ftDays, setFtDays] = useState(7);
@@ -49,59 +85,308 @@ export default function CalendarPage() {
   const [ftVisibility, setFtVisibility] = useState<string>('FRIENDS');
   const [ftConfirmLoading, setFtConfirmLoading] = useState(false);
 
+  // ── Fetch current user ID ──────────────────────────────
   useEffect(() => {
-    async function fetchEvents() {
+    async function fetchUser() {
       try {
-        setLoading(true);
-        setError(null);
-
-        const now = new Date();
-        const weekStart = new Date(now);
-        const day = now.getDay();
-        // getDay() returns 0 for Sunday; offset so Monday is always the start
-        const mondayOffset = day === 0 ? -6 : 1 - day;
-        weekStart.setDate(now.getDate() + mondayOffset);
-        weekStart.setHours(0, 0, 0, 0);
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 7);
-
-        const url = new URL('/api/events', window.location.origin);
-        url.searchParams.set('from', weekStart.toISOString());
-        url.searchParams.set('to', weekEnd.toISOString());
-
-        const response = await fetch(url.toString(), {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (!response.ok) {
-          const errorData = await response
-            .json()
-            .catch(() => ({ error: response.statusText }));
-          throw new Error(
-            errorData.error || `HTTP ${response.status}: ${response.statusText}`
-          );
+        const res = await fetch('/api/auth/session');
+        if (res.ok) {
+          const session = await res.json();
+          setCurrentUserId(session.user?.id || null);
         }
+      } catch {
+        // Silently handle
+      }
+    }
+    fetchUser();
+  }, []);
 
-        const data = await response.json();
-        setEvents(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error('Error fetching events:', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch events');
-      } finally {
-        setLoading(false);
+  // ── Fetch events for current week ──────────────────────
+  const fetchEvents = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 7);
+
+      const url = new URL('/api/events', window.location.origin);
+      url.searchParams.set('from', weekStart.toISOString());
+      url.searchParams.set('to', weekEnd.toISOString());
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        const errorData = await response
+          .json()
+          .catch(() => ({ error: response.statusText }));
+        throw new Error(
+          errorData.error || `HTTP ${response.status}: ${response.statusText}`
+        );
+      }
+
+      const data = await response.json();
+      setEvents(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Error fetching events:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch events');
+    } finally {
+      setLoading(false);
+    }
+  }, [weekStart]);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
+
+  // ── Week navigation ────────────────────────────────────
+
+  const goToPrevWeek = () => {
+    setWeekStart((prev) => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() - 7);
+      return d;
+    });
+  };
+
+  const goToNextWeek = () => {
+    setWeekStart((prev) => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() + 7);
+      return d;
+    });
+  };
+
+  // ── API: Create event ──────────────────────────────────
+
+  const createEvent = async (data: EventFormData): Promise<{ id: string }> => {
+    const payload = {
+      title: data.title,
+      description: data.description || undefined,
+      locationName: data.locationName || undefined,
+      startAt: data.startAt.toISOString(),
+      endAt: data.endAt.toISOString(),
+      timezone: data.timezone,
+      visibility: data.visibility,
+      coverMode: data.coverMode,
+      syncToGoogle: data.syncToGoogle,
+    };
+
+    const res = await fetch('/api/events', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Failed to create event');
+    }
+
+    const created = await res.json();
+
+    // Invite guests if any
+    if (data.guestIds.length > 0) {
+      try {
+        await fetch(`/api/events/${created.id}/invite`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userIds: data.guestIds }),
+        });
+      } catch {
+        console.error('Failed to send invites, but event was created');
+      }
+    }
+
+    // Refresh events
+    fetchEvents();
+    return { id: created.id };
+  };
+
+  // ── API: Update event ──────────────────────────────────
+
+  const updateEvent = async (
+    data: EventFormData,
+    eventId: string
+  ): Promise<void> => {
+    const payload = {
+      title: data.title,
+      description: data.description || undefined,
+      locationName: data.locationName || undefined,
+      startAt: data.startAt.toISOString(),
+      endAt: data.endAt.toISOString(),
+      timezone: data.timezone,
+      visibility: data.visibility,
+      coverMode: data.coverMode,
+      syncToGoogle: data.syncToGoogle,
+    };
+
+    const res = await fetch(`/api/events/${eventId}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Failed to update event');
+    }
+
+    // Invite new guests if any
+    if (data.guestIds.length > 0) {
+      try {
+        await fetch(`/api/events/${eventId}/invite`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userIds: data.guestIds }),
+        });
+      } catch {
+        console.error('Failed to send invites');
       }
     }
 
     fetchEvents();
-  }, []);
-
-  const handleEventClick = (event: Event) => {
-    setSelectedEvent(event);
   };
+
+  // ── API: Delete event ──────────────────────────────────
+
+  const deleteEvent = async (eventId: string): Promise<void> => {
+    const res = await fetch(`/api/events/${eventId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Failed to delete event');
+    }
+
+    fetchEvents();
+  };
+
+  // ── Handlers ───────────────────────────────────────────
+
+  const handleSave = async (
+    data: EventFormData,
+    eventId?: string
+  ): Promise<{ id: string } | void> => {
+    if (eventId) {
+      await updateEvent(data, eventId);
+    } else {
+      return await createEvent(data);
+    }
+  };
+
+  // Quick add from grid click
+  const handleQuickSave = async (data: {
+    title: string;
+    startAt: Date;
+    endAt: Date;
+  }) => {
+    const formData: EventFormData = {
+      title: data.title,
+      description: '',
+      locationName: '',
+      startAt: data.startAt,
+      endAt: data.endAt,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      visibility: 'FRIENDS',
+      coverMode: 'NONE',
+      syncToGoogle: false,
+      guestIds: [],
+    };
+    await createEvent(formData);
+    setQuickAdd(null);
+  };
+
+  // Quick add -> "More options" opens full editor
+  const handleMoreOptions = (data: {
+    title: string;
+    startAt: Date;
+    endAt: Date;
+  }) => {
+    setQuickAdd(null);
+    setEditingEvent(null);
+    setEditorDefaults({
+      start: data.startAt,
+      end: data.endAt,
+      title: data.title,
+    });
+    setEditorOpen(true);
+  };
+
+  // "Create" button -> open full editor with fresh defaults
+  const handleCreateClick = () => {
+    setEditingEvent(null);
+    setEditorDefaults({});
+    setEditorOpen(true);
+  };
+
+  // Click existing event on grid -> show details popover
+  const handleEventClick = (
+    event: CalendarEvent,
+    anchorX: number,
+    anchorY: number
+  ) => {
+    setQuickAdd(null);
+    setDetailsPopover({ event, anchorX, anchorY });
+  };
+
+  // Click empty grid cell -> show quick add popover
+  const handleEmptyCellClick = (
+    startDate: Date,
+    endDate: Date,
+    anchorX: number,
+    anchorY: number
+  ) => {
+    setDetailsPopover(null);
+    setQuickAdd({ startDate, endDate, anchorX, anchorY });
+  };
+
+  // From details popover -> open full editor
+  const handleEditFromDetails = () => {
+    if (!detailsPopover) return;
+    const evt = detailsPopover.event;
+    setDetailsPopover(null);
+    setEditingEvent(evt);
+    setEditorDefaults({});
+    setEditorOpen(true);
+  };
+
+  // From details popover -> delete
+  const handleDeleteFromDetails = async () => {
+    if (!detailsPopover) return;
+    const eventId = detailsPopover.event.id;
+    setDetailsPopover(null);
+    await deleteEvent(eventId);
+  };
+
+  // From details popover -> navigate to full event page
+  const handleViewDetails = () => {
+    if (!detailsPopover) return;
+    router.push(`/app/events/${detailsPopover.event.id}`);
+    setDetailsPopover(null);
+  };
+
+  // Agenda list click -> show details popover centered
+  const handleAgendaEventClick = (event: CalendarEvent) => {
+    setDetailsPopover({
+      event,
+      anchorX: window.innerWidth / 2 - 180,
+      anchorY: window.innerHeight / 3,
+    });
+  };
+
+  // ── Find Time logic (preserved from original) ─────────
 
   const openFindTime = async () => {
     setShowFindTime(true);
@@ -112,7 +397,6 @@ export default function CalendarPage() {
     setFtTitle('');
     setFtLocation('');
 
-    // Fetch friends
     try {
       const res = await fetch('/api/friends');
       if (res.ok) {
@@ -142,14 +426,6 @@ export default function CalendarPage() {
       const to = new Date(
         now.getTime() + ftDays * 24 * 60 * 60 * 1000
       ).toISOString();
-
-      // Get current user id from session
-      const sessionRes = await fetch('/api/auth/session');
-      let currentUserId = '';
-      if (sessionRes.ok) {
-        const session = await sessionRes.json();
-        currentUserId = session.user?.id || '';
-      }
 
       const participantIds = [currentUserId, ...selectedFriends].filter(
         Boolean
@@ -223,6 +499,8 @@ export default function CalendarPage() {
     }
   };
 
+  // ── Render ─────────────────────────────────────────────
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-violet-50">
       {/* Background decoration */}
@@ -256,7 +534,17 @@ export default function CalendarPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Calendar grid - main content */}
             <div className="lg:col-span-2">
-              <CalendarGrid events={events} onEventClick={handleEventClick} />
+              <CalendarGrid
+                events={events}
+                weekStart={weekStart}
+                onEventClick={(event, x, y) =>
+                  handleEventClick(event as CalendarEvent, x, y)
+                }
+                onEmptyCellClick={handleEmptyCellClick}
+                onCreateClick={handleCreateClick}
+                onPrevWeek={goToPrevWeek}
+                onNextWeek={goToNextWeek}
+              />
             </div>
 
             {/* Agenda list - sidebar */}
@@ -265,18 +553,16 @@ export default function CalendarPage() {
                 <h2 className="text-xl font-semibold text-slate-900 mb-4">
                   Upcoming Events
                 </h2>
-                <AgendaList events={events} onEventClick={handleEventClick} />
-
-                <Link
-                  href="/app/events/new"
-                  className="block mt-6 px-6 py-3 text-center bg-gradient-to-r from-blue-500 to-violet-500 hover:from-blue-600 hover:to-violet-600 text-white font-semibold rounded-full backdrop-blur-md border border-white/30 shadow-lg hover:shadow-xl transition-all duration-300"
-                >
-                  Create Event
-                </Link>
+                <AgendaList
+                  events={events}
+                  onEventClick={(e) =>
+                    handleAgendaEventClick(e as CalendarEvent)
+                  }
+                />
 
                 <button
                   onClick={openFindTime}
-                  className="block w-full mt-3 px-6 py-3 text-center bg-white hover:bg-slate-50 text-slate-900 font-semibold rounded-full border border-slate-200 shadow-md hover:shadow-lg transition-all duration-300"
+                  className="block w-full mt-4 px-6 py-3 text-center bg-white hover:bg-slate-50 text-slate-900 font-semibold rounded-full border border-slate-200 shadow-md hover:shadow-lg transition-all duration-300"
                 >
                   Find Time
                 </button>
@@ -285,65 +571,46 @@ export default function CalendarPage() {
           </div>
         )}
 
-        {/* Event detail modal */}
-        {selectedEvent && (
-          <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setSelectedEvent(null)}
-          >
-            <div
-              className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-900">
-                    {selectedEvent.title}
-                  </h2>
-                  <p className="text-slate-600 mt-1">
-                    {new Date(selectedEvent.startAt).toLocaleString('en-US', {
-                      weekday: 'long',
-                      month: 'long',
-                      day: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      hour12: true,
-                    })}{' '}
-                    -{' '}
-                    {new Date(selectedEvent.endAt).toLocaleTimeString('en-US', {
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      hour12: true,
-                    })}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setSelectedEvent(null)}
-                  className="text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  &#x2715;
-                </button>
-              </div>
-
-              <div className="flex gap-3">
-                <Link
-                  href={`/app/events/${selectedEvent.id}`}
-                  className="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg transition-colors text-center"
-                >
-                  View Details
-                </Link>
-                <button
-                  onClick={() => setSelectedEvent(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-900 font-semibold rounded-lg transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
+        {/* ── Quick Add Popover ────────────────────────── */}
+        {quickAdd && (
+          <QuickAddPopover
+            anchorX={quickAdd.anchorX}
+            anchorY={quickAdd.anchorY}
+            defaultStart={quickAdd.startDate}
+            defaultEnd={quickAdd.endDate}
+            onSave={handleQuickSave}
+            onMoreOptions={handleMoreOptions}
+            onClose={() => setQuickAdd(null)}
+          />
         )}
 
-        {/* Find Time Modal */}
+        {/* ── Event Details Popover ────────────────────── */}
+        {detailsPopover && (
+          <EventDetailsPopover
+            event={detailsPopover.event}
+            anchorX={detailsPopover.anchorX}
+            anchorY={detailsPopover.anchorY}
+            isOwner={detailsPopover.event.ownerId === currentUserId}
+            onEdit={handleEditFromDetails}
+            onDelete={handleDeleteFromDetails}
+            onClose={() => setDetailsPopover(null)}
+            onViewDetails={handleViewDetails}
+          />
+        )}
+
+        {/* ── Full Event Editor Dialog ─────────────────── */}
+        <EventEditorDialog
+          open={editorOpen}
+          onOpenChange={setEditorOpen}
+          event={editingEvent}
+          defaultStart={editorDefaults.start}
+          defaultEnd={editorDefaults.end}
+          defaultTitle={editorDefaults.title}
+          onSave={handleSave}
+          onDelete={deleteEvent}
+        />
+
+        {/* ── Find Time Modal (preserved) ──────────────── */}
         {showFindTime && (
           <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
@@ -372,7 +639,6 @@ export default function CalendarPage() {
               {/* Step 1: Search */}
               {ftStep === 'search' && (
                 <div className="space-y-6">
-                  {/* Friend selector */}
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-2">
                       Select Friends
@@ -403,7 +669,6 @@ export default function CalendarPage() {
                     )}
                   </div>
 
-                  {/* Date range */}
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-2">
                       Search Range
@@ -419,7 +684,6 @@ export default function CalendarPage() {
                     </select>
                   </div>
 
-                  {/* Duration */}
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-2">
                       Duration
@@ -464,8 +728,8 @@ export default function CalendarPage() {
                   ) : (
                     <div className="space-y-2">
                       <p className="text-sm text-slate-600 mb-3">
-                        {ftSlots.length} slot{ftSlots.length !== 1 ? 's' : ''}{' '}
-                        found:
+                        {ftSlots.length} slot
+                        {ftSlots.length !== 1 ? 's' : ''} found:
                       </p>
                       {ftSlots.map((slot, i) => (
                         <button

@@ -25,7 +25,7 @@ vi.mock('@/lib/db/prisma', () => ({
 
 describe('Friendship Policies - Core Functions', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   describe('sanitizeUserForSearch', () => {
@@ -167,25 +167,26 @@ describe('Friendship Policies - Core Functions', () => {
       expect(result).toBe(false);
     });
 
-    it('should show FRIENDS_ONLY to friends only', async () => {
+    it('should show FRIENDS_ONLY to anyone who is not blocked', async () => {
       const mockPrisma = prisma as any;
-      mockPrisma.friendship.findFirst
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ status: 'ACCEPTED' });
+      // Not blocked
+      mockPrisma.friendship.findFirst.mockResolvedValueOnce(null);
 
       const result = await canSearchSeeUser(
         'searcher',
         'target',
         'FRIENDS_ONLY'
       );
+      // FRIENDS_ONLY users are discoverable in search so friend requests can be sent
       expect(result).toBe(true);
     });
 
-    it('should hide FRIENDS_ONLY from non-friends', async () => {
+    it('should hide FRIENDS_ONLY from blocked users', async () => {
       const mockPrisma = prisma as any;
-      mockPrisma.friendship.findFirst
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
+      // Blocked
+      mockPrisma.friendship.findFirst.mockResolvedValueOnce({
+        status: 'BLOCKED',
+      });
 
       const result = await canSearchSeeUser(
         'searcher',

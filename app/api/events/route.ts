@@ -16,6 +16,7 @@ const CreateEventSchema = z.object({
   timezone: z.string().default('UTC'),
   visibility: z.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']).default('PRIVATE'),
   coverMode: z.enum(['NONE', 'BUSY_ONLY']).default('NONE'),
+  syncToGoogle: z.boolean().default(false),
 });
 
 const QuerySchema = z.object({
@@ -126,6 +127,7 @@ export async function POST(request: NextRequest) {
         timezone: data.timezone,
         visibility: data.visibility as EventVisibility,
         coverMode: data.coverMode as CoverMode,
+        syncToGoogle: data.syncToGoogle,
         attendees: {
           create: {
             userId: session.user.id,

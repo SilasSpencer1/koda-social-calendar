@@ -21,23 +21,41 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       allowDangerousEmailAccountLinking: true,
+      authorization: {
+        params: {
+          scope:
+            'openid email profile https://www.googleapis.com/auth/calendar',
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      },
     }),
     Credentials({
       credentials: {
-        email: { label: 'Email', type: 'email' },
+        identifier: { label: 'Email or Username', type: 'text' },
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error('Email and password are required');
+        // Accept "identifier" (new) field
+        const identifier = (credentials?.identifier as string) || '';
+        const password = credentials?.password as string;
+
+        if (!identifier || !password) {
+          throw new Error('Email/username and password are required');
         }
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
-        });
+        // Look up by email or username
+        const isEmail = identifier.includes('@');
+        const user = isEmail
+          ? await prisma.user.findUnique({
+              where: { email: identifier },
+            })
+          : await prisma.user.findUnique({
+              where: { username: identifier },
+            });
 
         if (!user || !user.passwordHash) {
-          throw new Error('Invalid email or password');
+          throw new Error('Invalid credentials');
         }
 
         const isPasswordValid = await verifyPassword(
@@ -46,7 +64,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         );
 
         if (!isPasswordValid) {
-          throw new Error('Invalid email or password');
+          throw new Error('Invalid credentials');
         }
 
         return {

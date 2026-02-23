@@ -1,43 +1,45 @@
+/**
+ * POST /api/integrations/google/disconnect
+ *
+ * Disconnects the user's Google account:
+ * - Deletes Account row
+ * - Deletes GoogleCalendarConnection
+ * - Deletes GoogleEventMapping rows
+ *
+ * Disconnect behaviour (Option A): imported events (source=GOOGLE) are KEPT
+ * but stop syncing. This is the safe default.
+ */
+
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { NextResponse } from 'next/server';
+
+export const runtime = 'nodejs';
 
 export async function POST() {
   try {
     const session = await getSession();
 
-    if (!session || !session.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Defensive check: ensure user.id exists
-    if (!session.user.id) {
-      console.error('Session user missing id property');
-      return NextResponse.json(
-        { error: 'Invalid session state' },
-        { status: 500 }
-      );
-    }
+    const userId = session.user.id;
 
-    // Delete Google Account for this user
+    // Always clean up sync tables unconditionally for this user,
+    // even if the Account row was already removed or never existed.
+    await prisma.googleEventMapping.deleteMany({ where: { userId } });
+    await prisma.googleCalendarConnection
+      .delete({ where: { userId } })
+      .catch(() => {}); // Ignore if doesn't exist
+
+    // Delete Google Account row if present
     const account = await prisma.account.findFirst({
-      where: {
-        userId: session.user.id,
-        provider: 'google',
-      },
+      where: { userId, provider: 'google' },
     });
 
     if (account) {
-      // TODO: Call Google revoke endpoint if refresh_token is available
-      // This would require calling Google's token revocation endpoint to revoke the tokens
-      // For now, we just delete the account record (tokens become invalid after deletion)
-      // https://developers.google.com/identity/protocols/oauth2/web-server#offline
-
-      await prisma.account.delete({
-        where: {
-          id: account.id,
-        },
-      });
+      await prisma.account.delete({ where: { id: account.id } });
     }
 
     return NextResponse.json({ ok: true });

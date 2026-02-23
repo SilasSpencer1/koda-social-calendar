@@ -59,7 +59,7 @@ export default function SignupPage() {
 
       // Sign in after successful signup
       const result = await signIn('credentials', {
-        email,
+        identifier: email,
         password,
         redirect: false,
       });

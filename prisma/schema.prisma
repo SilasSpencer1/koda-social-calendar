@@ -127,6 +127,8 @@ model User {
   joinRequests          JoinRequest[] @relation("JoinRequestRequester")
   discoveryPreferences  DiscoveryPreferences?
   suggestions           Suggestion[]
+  googleCalendarConnection GoogleCalendarConnection?
+  googleEventMappings      GoogleEventMapping[]
 
   @@index([email])
   @@index([username])
@@ -223,6 +225,7 @@ model Event {
   coverMode    CoverMode       @default(NONE)
   source       EventSource     @default(KODA)
   externalId   String?
+  syncToGoogle Boolean         @default(false)
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
@@ -230,6 +233,7 @@ model Event {
   owner        User          @relation("EventOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   attendees    Attendee[]
   joinRequests JoinRequest[]
+  googleEventMapping GoogleEventMapping?
 
   @@index([ownerId])
   @@index([startAt])
@@ -338,4 +342,41 @@ model Suggestion {
   @@unique([userId, externalId, slotStartAt])
   @@index([userId, slotStartAt])
   @@index([userId, status])
+}
+
+// ============================================================================
+// GOOGLE CALENDAR SYNC (Sprint 6)
+// ============================================================================
+
+model GoogleCalendarConnection {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  isEnabled            Boolean  @default(true)
+  lastSyncedAt         DateTime?
+  syncWindowPastDays   Int      @default(30)
+  syncWindowFutureDays Int      @default(90)
+  pushEnabled          Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model GoogleEventMapping {
+  id              String    @id @default(cuid())
+  userId          String
+  kodaEventId     String    @unique
+  googleEventId   String
+  googleEtag      String?
+  googleUpdatedAt DateTime?
+  lastPushedAt    DateTime?
+  lastPulledAt    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [kodaEventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, googleEventId])
+  @@index([userId])
 }

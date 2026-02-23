@@ -59,3 +59,54 @@ jobs:
             exit 1
           fi
           echo "Test coverage $COVERAGE% meets threshold of $THRESHOLD%"
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: koda_test
+          POSTGRES_PASSWORD: koda_test_pw
+          POSTGRES_DB: koda_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U koda_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://koda_test:koda_test_pw@localhost:5432/koda_e2e
+      NEXTAUTH_URL: http://localhost:3001
+      NEXTAUTH_SECRET: e2e-test-secret-at-least-32-characters-long
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Push database schema and generate client
+        run: npx prisma db push
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright E2E tests
+        run: pnpm test:e2e

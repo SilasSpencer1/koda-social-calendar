@@ -1,0 +1,26 @@
+name: Google Calendar Sync
+
+on:
+  schedule:
+    # Run every hour
+    - cron: '0 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Google Calendar Sync
+        run: |
+          curl -s -X POST \
+            "${{ secrets.APP_URL }}/api/jobs/sync-google" \
+            -H "Content-Type: application/json" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --fail-with-body \
+            -o response.json
+
+          echo "Sync response:"
+          cat response.json | jq .
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

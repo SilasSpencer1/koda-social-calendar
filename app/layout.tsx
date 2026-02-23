@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import Link from 'next/link';
+import { PostHogProvider } from '@/components/providers/PostHogProvider';
 import './globals.css';
 
 const geistSans = Geist({
@@ -14,8 +15,39 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Koda — Social Calendar',
-  description: 'Share availability and discover things to do with friends',
+  title: {
+    default: 'Koda — Social Calendar for Friends',
+    template: '%s | Koda',
+  },
+  description:
+    'Share availability, coordinate plans, and discover things to do with friends. Privacy-first social calendar with Google Calendar sync.',
+  metadataBase: new URL(process.env.NEXTAUTH_URL || 'https://koda.app'),
+  openGraph: {
+    title: 'Koda — Social Calendar for Friends',
+    description:
+      'Share availability, coordinate plans, and discover things to do with friends.',
+    url: '/',
+    siteName: 'Koda',
+    type: 'website',
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'Koda — Social Calendar',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Koda — Social Calendar for Friends',
+    description:
+      'Share availability, coordinate plans, and discover things to do with friends.',
+    images: ['/og-image.png'],
+  },
+  icons: {
+    icon: '/favicon.ico',
+  },
 };
 
 export default function RootLayout({
@@ -66,7 +98,9 @@ export default function RootLayout({
             </div>
           </div>
         </nav>
-        <main>{children}</main>
+        <PostHogProvider>
+          <main>{children}</main>
+        </PostHogProvider>
       </body>
     </html>
   );

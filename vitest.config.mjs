@@ -11,6 +11,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./tests/setup.ts'],
+    exclude: ['node_modules', 'e2e/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
@@ -23,8 +24,13 @@ export default defineConfig({
         'lib/db/**',
         'lib/supabase/**',
         'lib/rate-limit.ts', // Redis integration only, tested via in-memory fallback in API tests
+        'lib/google/client.ts', // Calls real Google API, tested via mocks in sync tests
+        'lib/analytics/**', // Client-side analytics, tested in E2E
         'app/api/uploads/**',
+        'app/api/jobs/**', // Cron job endpoints, tested via E2E/integration
         'prisma/**',
+        'sentry.*.config.ts',
+        'e2e/**',
       ],
       // Use istanbul ignore comments to exclude Redis paths from coverage
       // Coverage will be calculated only for tested code paths

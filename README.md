@@ -815,3 +815,139 @@ External API responses are cached (Upstash Redis or in-memory fallback):
 - Opening hours parser handles common OSM patterns only. Complex rules (e.g. `PH off`, `sunrise-sunset`, conditional rules) result in `UNKNOWN` / `LOW` confidence.
 - No map UI in this sprint (can be added later).
 - No ML-based ranking — uses a simple proximity + category + open-status scoring model.
+
+## Google Calendar Sync (Sprint 6)
+
+### Overview
+
+Koda supports 2-way sync with Google Calendar:
+
+- **Pull**: Import Google Calendar events into Koda as blocks (source=GOOGLE)
+- **Push**: Optionally push Koda-created events to Google Calendar
+- **Loop prevention**: ETags and timestamps prevent infinite sync cycles
+- **Idempotent**: Safe to run repeatedly without side effects
+
+### Setup
+
+1. **Google OAuth scopes**: The Google provider is configured to request `https://www.googleapis.com/auth/calendar` scope with offline access. Users connecting Google will be prompted for calendar permissions.
+
+2. **Environment variables**:
+
+   ```bash
+   GOOGLE_CLIENT_ID=your_google_client_id
+   GOOGLE_CLIENT_SECRET=your_google_client_secret
+   CRON_SECRET=your_random_cron_secret_min_32_chars
+   ```
+
+3. **Run Prisma migration** after pulling Sprint 6 changes:
+
+   ```bash
+   pnpm db:generate
+   pnpm db:migrate
+   ```
+
+### Manual Sync
+
+Trigger a sync from the UI:
+
+1. Go to `/app/settings/integrations`
+2. Click "Sync Now"
+3. View sync results (pulled, pushed, updated, deleted counts)
+
+Or via API:
+
+```bash
+curl -X POST http://localhost:3000/api/integrations/google/sync \
+  -H "Cookie: authjs.session-token=<your-token>"
+```
+
+### Scheduled Sync (Cron Job)
+
+A GitHub Actions workflow (`.github/workflows/sync-google.yml`) calls the jobs endpoint hourly:
+
+```bash
+# Manual trigger
+curl -X POST https://your-app.com/api/jobs/sync-google \
+  -H "x-cron-secret: $CRON_SECRET"
+```
+
+GitHub Actions secrets required:
+
+- `APP_URL`: Your deployed app URL (e.g., `https://koda.app`)
+- `CRON_SECRET`: Matches the `CRON_SECRET` env var on your server
+
+### Sync Window
+
+- Past: 30 days (configurable)
+- Future: 90 days (configurable)
+
+### Push Behaviour
+
+- **Global toggle**: Enable/disable pushing all Koda events to Google in Settings
+- **Per-event flag**: `syncToGoogle` field on individual events
+- **Effective rule**: Event is pushed if global toggle OR per-event flag is true
+- **Source filter**: Events with `source=GOOGLE` (imported) are NEVER pushed back (prevents ping-pong)
+
+### Disconnect Behaviour (Option A)
+
+When a user disconnects Google:
+
+- Account row is deleted (tokens removed)
+- GoogleCalendarConnection and GoogleEventMapping rows are deleted
+- **Imported events (source=GOOGLE) are KEPT** but stop syncing
+- This is the safe default — no data loss
+
+### Loop Prevention
+
+1. **Pull**: Stores Google `etag` per mapping. If etag unchanged since last sync → no-op
+2. **Push**: Stores `lastPushedAt` per mapping. If Koda event `updatedAt` <= `lastPushedAt` → no-op
+3. **Source filter**: `source=GOOGLE` events are excluded from push queries entirely
+
+## Beta Hardening (Sprint 6)
+
+### Sentry
+
+Error tracking is wired for server, client, and edge runtimes:
+
+```bash
+SENTRY_DSN=https://...@sentry.io/...
+NEXT_PUBLIC_SENTRY_DSN=https://...@sentry.io/...
+```
+
+Sentry is only active in production (`NODE_ENV=production`). Set DSN to empty to disable.
+
+### PostHog
+
+Product analytics tracks key events (signup, invite sent, RSVP, suggestion added, Google sync):
+
+```bash
+NEXT_PUBLIC_POSTHOG_KEY=phc_your_key
+NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
+```
+
+PostHog is disabled when `NEXT_PUBLIC_POSTHOG_KEY` is not set (safe for local dev).
+
+### Playwright E2E Tests
+
+```bash
+# Install Playwright browsers (first time)
+pnpm exec playwright install chromium
+
+# Run E2E smoke tests (starts dev server automatically)
+pnpm test:e2e
+
+# Run with headed browser (for debugging)
+pnpm test:e2e:headed
+
+# View HTML report after run
+pnpm exec playwright show-report
+```
+
+E2E tests cover:
+
+1. Signup/login flow
+2. Add friend + accept request
+3. Create event + invite friend
+4. Friend accepts invite (RSVP GOING)
+5. Calendar shows event for both accounts
+6. Landing page sections and meta tags
