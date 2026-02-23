@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+.next
+out
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+
+# Testing
+coverage
+.nyc_output
+
+# Environment files (use Railway env vars)
+.env
+.env.local
+.env.development
+.env.production
+
+# Misc
+*.md
+!README.md
+.DS_Store
+*.log
+npm-debug.log*
+
+# Nixpacks (not needed for Docker)
+nixpacks.toml
+
+# Husky
+.husky

@@ -9,6 +9,7 @@ const adapter = PrismaAdapter(prisma);
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   adapter,
+  trustHost: true,
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,

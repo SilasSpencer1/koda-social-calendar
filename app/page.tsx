@@ -8,7 +8,7 @@ export default function Home() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
       <main className="w-full max-w-4xl px-4 text-center">
         <div className="space-y-8">
-          <div className="space-y-4">
+          <div className="glass-panel space-y-4 rounded-lg px-8 py-6">
             <h1 className="text-5xl font-bold tracking-tight text-gray-900 md:text-6xl">
               Share availability. Discover plans.
             </h1>
@@ -19,7 +19,10 @@ export default function Home() {
           </div>
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link href="/calendar">
-              <Button size="lg" className="bg-blue-600 hover:bg-blue-700">
+              <Button
+                size="lg"
+                className="bg-white text-blue-600 hover:bg-blue-50"
+              >
                 Get Started
               </Button>
             </Link>
@@ -34,7 +37,7 @@ export default function Home() {
             </Link>
           </div>
           <div className="grid grid-cols-1 gap-6 pt-8 md:grid-cols-3">
-            <div className="rounded-lg bg-white p-6 shadow-sm">
+            <div className="glass-card rounded-lg p-6">
               <div className="text-2xl"></div>
               <h3 className="mt-2 font-semibold text-gray-900">
                 Share Calendar
@@ -43,14 +46,14 @@ export default function Home() {
                 Control exactly what friends can see about your schedule
               </p>
             </div>
-            <div className="rounded-lg bg-white p-6 shadow-sm">
+            <div className="glass-card rounded-lg p-6">
               <div className="text-2xl"></div>
               <h3 className="mt-2 font-semibold text-gray-900">Find Friends</h3>
               <p className="mt-1 text-sm text-gray-600">
                 Connect with friends and coordinate group activities
               </p>
             </div>
-            <div className="rounded-lg bg-white p-6 shadow-sm">
+            <div className="glass-card rounded-lg p-6">
               <div className="text-2xl"></div>
               <h3 className="mt-2 font-semibold text-gray-900">
                 Discover Events
