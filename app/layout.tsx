@@ -39,25 +39,25 @@ export default function RootLayout({
               </div>
               <div className="flex items-center space-x-8">
                 <Link
-                  href="/calendar"
+                  href="/app/calendar"
                   className="glass-link text-gray-600 hover:text-gray-900"
                 >
                   Calendar
                 </Link>
                 <Link
-                  href="/friends"
+                  href="/app/friends"
                   className="glass-link text-gray-600 hover:text-gray-900"
                 >
                   Friends
                 </Link>
                 <Link
-                  href="/discover"
+                  href="/app/discover"
                   className="glass-link text-gray-600 hover:text-gray-900"
                 >
                   Discover
                 </Link>
                 <Link
-                  href="/settings"
+                  href="/app/settings"
                   className="glass-link text-gray-600 hover:text-gray-900"
                 >
                   Settings
