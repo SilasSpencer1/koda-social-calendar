@@ -19,7 +19,8 @@
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
     "db:generate": "prisma generate",
-    "db:push": "prisma db push"
+    "db:push": "prisma db push",
+    "db:setup": "node scripts/setup-db.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -43,7 +44,8 @@
     "pg": "^8.18.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "tailwind-merge": "^3.4.0"
+    "tailwind-merge": "^3.4.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

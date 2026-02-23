@@ -27,8 +27,9 @@ export default function RootLayout({
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        suppressHydrationWarning
       >
-        <nav className="border-b border-gray-200 bg-white">
+        <nav className="glass-nav border-b border-gray-200">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="flex h-16 justify-between">
               <div className="flex items-center">
@@ -39,25 +40,25 @@ export default function RootLayout({
               <div className="flex items-center space-x-8">
                 <Link
                   href="/calendar"
-                  className="text-gray-600 hover:text-gray-900"
+                  className="glass-link text-gray-600 hover:text-gray-900"
                 >
                   Calendar
                 </Link>
                 <Link
                   href="/friends"
-                  className="text-gray-600 hover:text-gray-900"
+                  className="glass-link text-gray-600 hover:text-gray-900"
                 >
                   Friends
                 </Link>
                 <Link
                   href="/discover"
-                  className="text-gray-600 hover:text-gray-900"
+                  className="glass-link text-gray-600 hover:text-gray-900"
                 >
                   Discover
                 </Link>
                 <Link
                   href="/settings"
-                  className="text-gray-600 hover:text-gray-900"
+                  className="glass-link text-gray-600 hover:text-gray-900"
                 >
                   Settings
                 </Link>
