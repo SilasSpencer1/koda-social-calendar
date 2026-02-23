@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { CityAutocomplete } from '@/components/ui/CityAutocomplete';
 import {
   mergeIntervals,
   invertToFree,
@@ -333,11 +334,10 @@ export default function DiscoverPage() {
               <label className="block text-sm font-semibold text-slate-700 mb-1">
                 City
               </label>
-              <input
-                type="text"
+              <CityAutocomplete
                 value={prefs.city}
-                onChange={(e) => setPrefs({ ...prefs, city: e.target.value })}
-                onBlur={(e) => savePrefs({ city: e.target.value })}
+                onChange={(v) => setPrefs({ ...prefs, city: v })}
+                onBlur={() => savePrefs({ city: prefs.city })}
                 placeholder="e.g. New York"
                 className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
               />
