@@ -1,5 +1,6 @@
 import { getCurrentUser, signOut } from '@/lib/auth';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
 export default async function AppLayout({
   children,
@@ -7,6 +8,12 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const user = await getCurrentUser();
+
+  if (!user) {
+    // Include callbackUrl so the login page redirects back after auth.
+    // This layout only serves /app/* routes, so /app is the correct default.
+    redirect('/login?callbackUrl=%2Fapp');
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -40,8 +47,8 @@ export default async function AppLayout({
 
         <div className="border-t border-gray-200 p-4">
           <div className="mb-4">
-            <p className="text-sm font-medium text-gray-900">{user?.name}</p>
-            <p className="text-xs text-gray-500">{user?.email}</p>
+            <p className="text-sm font-medium text-gray-900">{user.name}</p>
+            <p className="text-xs text-gray-500">{user.email}</p>
           </div>
           <form
             action={async () => {

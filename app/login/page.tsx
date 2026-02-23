@@ -11,7 +11,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') || '/app';
 
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,7 +23,7 @@ function LoginForm() {
 
     try {
       const result = await signIn('credentials', {
-        email,
+        identifier,
         password,
         redirect: false,
       });
@@ -60,16 +60,17 @@ function LoginForm() {
       <form onSubmit={handleEmailSignIn} className="space-y-4">
         <div>
           <label
-            htmlFor="email"
+            htmlFor="identifier"
             className="block text-sm font-medium text-gray-700"
           >
-            Email
+            Email or Username
           </label>
           <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            id="identifier"
+            type="text"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="you@example.com or your_username"
             className="glass-input mt-1 w-full rounded-md px-3 py-2"
             required
           />
@@ -97,7 +98,7 @@ function LoginForm() {
           disabled={loading}
           className="w-full bg-blue-600 hover:bg-blue-700"
         >
-          {loading ? 'Signing in...' : 'Sign in with Email'}
+          {loading ? 'Signing in...' : 'Sign in'}
         </Button>
       </form>
 

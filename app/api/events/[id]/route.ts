@@ -14,6 +14,7 @@ const UpdateEventSchema = z.object({
   timezone: z.string().optional(),
   visibility: z.enum(['PRIVATE', 'FRIENDS', 'PUBLIC']).optional(),
   coverMode: z.enum(['NONE', 'BUSY_ONLY']).optional(),
+  syncToGoogle: z.boolean().optional(),
 });
 
 export async function GET(
@@ -150,6 +151,7 @@ export async function PATCH(
         timezone: data.timezone,
         visibility: data.visibility as EventVisibility | undefined,
         coverMode: data.coverMode as CoverMode | undefined,
+        syncToGoogle: data.syncToGoogle,
       },
       include: {
         attendees: {
