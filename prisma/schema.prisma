@@ -1,0 +1,218 @@
+// Koda - Social Calendar Database Schema
+// Prisma + Supabase Postgres
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum AccountVisibility {
+  PUBLIC
+  FRIENDS_ONLY
+  PRIVATE
+}
+
+enum DetailLevel {
+  DETAILS
+  BUSY_ONLY
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  BLOCKED
+}
+
+enum EventVisibility {
+  PRIVATE
+  FRIENDS
+  PUBLIC
+}
+
+enum CoverMode {
+  NONE
+  BUSY_ONLY
+}
+
+enum EventSource {
+  KODA
+  GOOGLE
+}
+
+enum AttendeeStatus {
+  INVITED
+  GOING
+  DECLINED
+}
+
+enum Anonymity {
+  NAMED
+  ANONYMOUS
+}
+
+enum AttendeeRole {
+  HOST
+  ATTENDEE
+}
+
+// ============================================================================
+// MODELS
+// ============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  username      String?   @unique
+  avatarUrl     String?
+  city          String?
+  passwordHash  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  settings              Settings?
+  sentFriendRequests    Friendship[] @relation("FriendshipRequester")
+  receivedFriendRequests Friendship[] @relation("FriendshipAddressee")
+  ownedEvents           Event[]      @relation("EventOwner")
+  attendances           Attendee[]
+  accounts              Account[]
+  sessions              Session[]
+
+  @@index([email])
+  @@index([username])
+  @@index([city])
+}
+
+// NextAuth models
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?
+  access_token       String?
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Settings {
+  id                String            @id @default(cuid())
+  userId            String            @unique
+  accountVisibility AccountVisibility @default(FRIENDS_ONLY)
+  defaultDetailLevel DetailLevel      @default(BUSY_ONLY)
+  allowSuggestions  Boolean           @default(true)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Friendship {
+  id              String           @id @default(cuid())
+  requesterId     String
+  addresseeId     String
+  status          FriendshipStatus @default(PENDING)
+  canViewCalendar Boolean          @default(false)
+  detailLevel     DetailLevel      @default(BUSY_ONLY)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // Relations
+  requester User @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee User @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  // Prevent duplicate friend requests from the same requester to the same addressee
+  // Note: This does NOT prevent bidirectional friendships (A->B and B->A can both exist)
+  @@unique([requesterId, addresseeId])
+  @@index([requesterId])
+  @@index([addresseeId])
+  @@index([status])
+}
+
+model Event {
+  id           String          @id @default(cuid())
+  ownerId      String
+  title        String
+  description  String?
+  locationName String?
+  startAt      DateTime
+  endAt        DateTime
+  timezone     String          @default("UTC")
+  visibility   EventVisibility @default(PRIVATE)
+  coverMode    CoverMode       @default(NONE)
+  source       EventSource     @default(KODA)
+  externalId   String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  // Relations
+  owner     User       @relation("EventOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  attendees Attendee[]
+
+  @@index([ownerId])
+  @@index([startAt])
+  @@index([endAt])
+  @@index([visibility])
+  @@index([source, externalId])
+}
+
+model Attendee {
+  id        String         @id @default(cuid())
+  eventId   String
+  userId    String
+  status    AttendeeStatus @default(INVITED)
+  anonymity Anonymity      @default(NAMED)
+  role      AttendeeRole   @default(ATTENDEE)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  // Relations
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Each user can only attend an event once
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+  @@index([status])
+}

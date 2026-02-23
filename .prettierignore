@@ -1,0 +1,9 @@
+node_modules
+.next
+.pnpm
+pnpm-lock.yaml
+pnpm-workspace.yaml
+*.lock
+dist
+build
+out
