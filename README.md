@@ -717,3 +717,101 @@ See `/docs/sprint-plan.md` for detailed roadmap.
    - No `prisma/migrations` directory yet
    - Developers must run `pnpm db:migrate` to create initial migration
    - Future PRs should commit migrations for production deployments
+
+## Discover — Suggestions Engine (Sprint 5)
+
+### Overview
+
+The Discover feature helps users find things to do during their free time. It combines two free external APIs to surface suggestions:
+
+- **Ticketmaster Discovery API** — time-specific events (concerts, shows, sports)
+- **OpenStreetMap (Overpass + Nominatim)** — nearby places/venues (cafes, restaurants, bars, parks, museums)
+
+### Setup
+
+1. Add environment variables to `.env`:
+
+   ```
+   TICKETMASTER_API_KEY=your_key       # Free at https://developer.ticketmaster.com/
+   OSM_USER_AGENT=Koda/1.0 (email)     # Required by Nominatim usage policy
+   ```
+
+   (Upstash Redis vars are optional — an in-memory cache is used as fallback in dev.)
+
+2. Apply schema changes:
+   ```bash
+   pnpm prisma generate
+   pnpm db:push   # or pnpm db:migrate
+   ```
+
+### How It Works
+
+1. User opens **`/app/discover`** and sets preferences: city, radius (miles), interest tags
+2. The page computes free time slots from the user's existing events (next 7 days)
+3. User selects a slot → app calls `GET /api/suggestions?slotStart=ISO&slotEnd=ISO`
+4. Backend fetches from Ticketmaster + OSM in parallel, applies hours rule, dedupes, ranks
+5. Suggestions are persisted in the `Suggestion` table with status `PROPOSED`
+6. User can **Save**, **Dismiss**, or **Add to Calendar** each suggestion
+
+### Hours Rule (Opening Hours)
+
+- OSM venues may include `opening_hours` tags in a specific format (e.g. `Mo-Fr 08:00-18:00`)
+- A best-effort parser handles common patterns: day ranges, time ranges, multi-rule, `24/7`
+- **If hours are known and venue is CLOSED during the slot** → suggestion is rejected (not shown)
+- **If hours are missing or unparseable** → suggestion is kept with `confidence: LOW` and `isOpenAtTime: UNKNOWN`
+- Ticketmaster events are always treated as `OPEN` + `HIGH` confidence (they have explicit start times)
+
+### API Endpoints
+
+| Method | Route                                  | Description                                  |
+| ------ | -------------------------------------- | -------------------------------------------- |
+| GET    | `/api/me/discover-preferences`         | Get user's discovery preferences             |
+| PATCH  | `/api/me/discover-preferences`         | Update preferences (city, radius, interests) |
+| GET    | `/api/suggestions?slotStart&slotEnd`   | Fetch & rank suggestions for a time slot     |
+| POST   | `/api/suggestions/:id/save`            | Mark suggestion as SAVED                     |
+| POST   | `/api/suggestions/:id/dismiss`         | Mark suggestion as DISMISSED                 |
+| POST   | `/api/suggestions/:id/add-to-calendar` | Create Koda event from suggestion            |
+
+### Data Model Additions
+
+**New enums**: `SuggestionSource`, `OpenStatus`, `Confidence`, `SuggestionStatus`
+
+**New models**:
+
+- `DiscoveryPreferences` — per-user city, radius, interests (string[])
+- `Suggestion` — persisted suggestion with source, slot times, venue details, status, hours info
+
+### Testing Locally
+
+```bash
+# 1. Set TICKETMASTER_API_KEY in .env (OSM works without key)
+# 2. Generate Prisma client
+pnpm prisma generate
+
+# 3. Run the app
+pnpm dev
+
+# 4. Navigate to /app/discover
+# 5. Enter a city (e.g. "New York"), select interests, click a free slot
+
+# Without TICKETMASTER_API_KEY, only OSM results appear (places/venues)
+```
+
+### Caching
+
+External API responses are cached (Upstash Redis or in-memory fallback):
+
+- Ticketmaster: keyed by `tm:{city}:{date}:{radius}:{interestsHash}`, TTL 1 hour
+- OSM/Overpass: keyed by `osm:{city}:{radius}:{tags}`, TTL 2 hours
+- Nominatim geocoding: keyed by `nominatim:{city}`, TTL 2 hours
+
+### Rate Limiting
+
+- `GET /api/suggestions`: 30 requests/minute/user
+- `POST /api/suggestions/:id/*` actions: 100 requests/hour/user
+
+### Limitations
+
+- Opening hours parser handles common OSM patterns only. Complex rules (e.g. `PH off`, `sunrise-sunset`, conditional rules) result in `UNKNOWN` / `LOW` confidence.
+- No map UI in this sprint (can be added later).
+- No ML-based ranking — uses a simple proximity + category + open-status scoring model.
