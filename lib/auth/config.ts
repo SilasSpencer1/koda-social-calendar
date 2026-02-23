@@ -9,7 +9,10 @@ import { verifyPassword } from './password';
 // NextAuth expects a field named `image` on the User model, but this schema
 // uses `avatarUrl`. Wrap the adapter to translate between the two.
 function toAdapterUser(user: Record<string, unknown>): AdapterUser {
-  return { ...user, image: (user.avatarUrl as string) ?? null } as AdapterUser;
+  return {
+    ...user,
+    image: (user.avatarUrl as string) ?? null,
+  } as unknown as AdapterUser;
 }
 
 const rawAdapter = PrismaAdapter(prisma);
@@ -19,7 +22,7 @@ const adapter: Adapter = {
   async createUser(data) {
     // NextAuth sends `image` and `emailVerified` which don't exist in this schema.
     // Map `image` → `avatarUrl` and drop `emailVerified`.
-    const { image, emailVerified, id, ...rest } = data as Record<
+    const { image, emailVerified, id, ...rest } = data as unknown as Record<
       string,
       unknown
     >;
@@ -32,7 +35,7 @@ const adapter: Adapter = {
     return toAdapterUser(user as Record<string, unknown>);
   },
   async updateUser(data) {
-    const { image, emailVerified, id, ...rest } = data as Record<
+    const { image, emailVerified, id, ...rest } = data as unknown as Record<
       string,
       unknown
     >;
