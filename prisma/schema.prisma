@@ -77,6 +77,29 @@ enum JoinRequestStatus {
   CANCELED
 }
 
+enum SuggestionSource {
+  TICKETMASTER
+  OSM
+}
+
+enum OpenStatus {
+  OPEN
+  CLOSED
+  UNKNOWN
+}
+
+enum Confidence {
+  HIGH
+  LOW
+}
+
+enum SuggestionStatus {
+  PROPOSED
+  SAVED
+  DISMISSED
+  ADDED
+}
+
 // ============================================================================
 // MODELS
 // ============================================================================
@@ -102,6 +125,8 @@ model User {
   accounts              Account[]
   sessions              Session[]
   joinRequests          JoinRequest[] @relation("JoinRequestRequester")
+  discoveryPreferences  DiscoveryPreferences?
+  suggestions           Suggestion[]
 
   @@index([email])
   @@index([username])
@@ -270,4 +295,47 @@ model JoinRequest {
   @@index([eventId])
   @@index([requesterId])
   @@index([status])
+}
+
+model DiscoveryPreferences {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  city        String   @default("")
+  radiusMiles Int      @default(10)
+  interests   String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Suggestion {
+  id            String           @id @default(cuid())
+  userId        String
+  source        SuggestionSource
+  slotStartAt   DateTime
+  slotEndAt     DateTime
+  title         String
+  description   String?
+  category      String?
+  venueName     String?
+  address       String?
+  lat           Float?
+  lng           Float?
+  url           String?
+  imageUrl      String?
+  distanceMiles Float?
+  isOpenAtTime  OpenStatus       @default(UNKNOWN)
+  confidence    Confidence       @default(LOW)
+  status        SuggestionStatus @default(PROPOSED)
+  externalId    String?
+  rawPayload    Json?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, externalId, slotStartAt])
+  @@index([userId, slotStartAt])
+  @@index([userId, status])
 }
