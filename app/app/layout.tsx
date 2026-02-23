@@ -1,4 +1,5 @@
 import { getCurrentUser, signOut } from '@/lib/auth';
+import { prisma } from '@/lib/db/prisma';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
@@ -13,6 +14,15 @@ export default async function AppLayout({
   if (!user) {
     redirect('/login?callbackUrl=%2Fapp');
   }
+
+  // Fetch fresh avatarUrl from DB — the JWT image field is stale after uploads
+  const dbUser = user?.id
+    ? await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { avatarUrl: true },
+      })
+    : null;
+  const avatarUrl = dbUser?.avatarUrl ?? user?.image;
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -59,9 +69,9 @@ export default async function AppLayout({
 
         <div className="border-t border-gray-200 p-4">
           <div className="mb-4 flex items-center gap-3">
-            {user.image ? (
+            {avatarUrl ? (
               <img
-                src={user.image}
+                src={avatarUrl}
                 alt={user.name || ''}
                 className="h-8 w-8 rounded-full object-cover"
               />
