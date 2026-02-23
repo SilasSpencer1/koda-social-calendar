@@ -21,7 +21,7 @@ export async function POST(
     const body = await request.json();
     const { status } = RSVPSchema.parse(body);
 
-    // Find attendee record
+    // Find attendee record (include event to check dates)
     const attendee = await prisma.attendee.findUnique({
       where: {
         eventId_userId: {
@@ -29,12 +29,23 @@ export async function POST(
           userId: session.user.id,
         },
       },
+      include: {
+        event: { select: { endAt: true } },
+      },
     });
 
     if (!attendee) {
       return NextResponse.json(
         { error: 'You are not invited to this event' },
         { status: 403 }
+      );
+    }
+
+    // Block RSVP on past events (only for accepting; declining is always ok)
+    if (status === 'GOING' && attendee.event.endAt < new Date()) {
+      return NextResponse.json(
+        { error: 'This event has already ended' },
+        { status: 400 }
       );
     }
 

@@ -203,7 +203,7 @@ export default function EventDetailPage() {
             </p>
 
             {event.locationName && (
-              <p className="text-slate-600 mt-2">📍 {event.locationName}</p>
+              <p className="text-slate-600 mt-2">{event.locationName}</p>
             )}
             {event.description && (
               <p className="text-slate-700 mt-4">{event.description}</p>
@@ -235,7 +235,7 @@ export default function EventDetailPage() {
                       : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  ✓ Going
+                  Going
                 </button>
                 <button
                   onClick={() => handleRSVP('DECLINED')}
@@ -245,7 +245,7 @@ export default function EventDetailPage() {
                       : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  ✕ Declined
+                  Decline
                 </button>
               </div>
 
@@ -282,8 +282,8 @@ export default function EventDetailPage() {
                       {attendee.name}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {attendee.status === 'GOING' && '✓ Going'}
-                      {attendee.status === 'DECLINED' && '✕ Declined'}
+                      {attendee.status === 'GOING' && 'Going'}
+                      {attendee.status === 'DECLINED' && 'Declined'}
                       {attendee.status === 'INVITED' && '? Invited'}
                     </p>
                   </div>

@@ -179,7 +179,7 @@ export function QuickAddPopover({
             size="sm"
             onClick={handleSave}
             disabled={!title.trim() || saving}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className=""
           >
             {saving ? 'Saving...' : 'Save'}
           </Button>

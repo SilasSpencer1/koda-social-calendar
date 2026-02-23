@@ -20,8 +20,16 @@ const CreateEventSchema = z.object({
 });
 
 const QuerySchema = z.object({
-  from: z.string().datetime().optional(),
-  to: z.string().datetime().optional(),
+  from: z
+    .string()
+    .datetime()
+    .nullish()
+    .transform((v) => v ?? undefined),
+  to: z
+    .string()
+    .datetime()
+    .nullish()
+    .transform((v) => v ?? undefined),
 });
 
 export async function GET(request: NextRequest) {

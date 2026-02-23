@@ -344,7 +344,6 @@ export default function FriendsPage() {
           <Button
             onClick={() => handleSearch()}
             disabled={searching || !query.trim()}
-            className="bg-blue-600 hover:bg-blue-700"
           >
             {searching ? 'Searching...' : 'Search'}
           </Button>
@@ -381,7 +380,7 @@ export default function FriendsPage() {
                   <Button
                     size="sm"
                     onClick={() => sendRequest(r.id)}
-                    className="bg-blue-600 hover:bg-blue-700"
+                    className=""
                   >
                     Add Friend
                   </Button>

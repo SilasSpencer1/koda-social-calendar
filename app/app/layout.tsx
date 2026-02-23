@@ -1,6 +1,7 @@
 import { getCurrentUser, signOut } from '@/lib/auth';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 
 export default async function AppLayout({
   children,
@@ -10,8 +11,6 @@ export default async function AppLayout({
   const user = await getCurrentUser();
 
   if (!user) {
-    // Include callbackUrl so the login page redirects back after auth.
-    // This layout only serves /app/* routes, so /app is the correct default.
     redirect('/login?callbackUrl=%2Fapp');
   }
 
@@ -29,7 +28,13 @@ export default async function AppLayout({
             href="/app"
             className="block rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100"
           >
-            Dashboard
+            Feed
+          </Link>
+          <Link
+            href="/app/calendar"
+            className="block rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100"
+          >
+            Calendar
           </Link>
           <Link
             href="/app/friends"
@@ -38,17 +43,39 @@ export default async function AppLayout({
             Friends
           </Link>
           <Link
-            href="/app/settings/integrations"
+            href="/app/discover"
             className="block rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100"
           >
-            Integrations
+            Discover
+          </Link>
+          <NotificationBell />
+          <Link
+            href="/app/settings"
+            className="block rounded-lg px-4 py-2 text-gray-700 hover:bg-gray-100"
+          >
+            Settings
           </Link>
         </nav>
 
         <div className="border-t border-gray-200 p-4">
-          <div className="mb-4">
-            <p className="text-sm font-medium text-gray-900">{user.name}</p>
-            <p className="text-xs text-gray-500">{user.email}</p>
+          <div className="mb-4 flex items-center gap-3">
+            {user.image ? (
+              <img
+                src={user.image}
+                alt={user.name || ''}
+                className="h-8 w-8 rounded-full object-cover"
+              />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
+                {user.name?.charAt(0)?.toUpperCase() || '?'}
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-gray-900">
+                {user.name}
+              </p>
+              <p className="truncate text-xs text-gray-500">{user.email}</p>
+            </div>
           </div>
           <form
             action={async () => {
