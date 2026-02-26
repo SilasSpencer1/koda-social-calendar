@@ -6,8 +6,20 @@ import type { NextRequest } from 'next/server';
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  const sessionCookie =
+    request.cookies.get('authjs.session-token') ||
+    request.cookies.get('__Secure-authjs.session-token');
+
+  // Redirect already-authenticated users away from marketing/auth pages
+  if (pathname === '/' || pathname === '/login' || pathname === '/signup') {
+    if (sessionCookie) {
+      return NextResponse.redirect(new URL('/app', request.url));
+    }
+    return NextResponse.next();
+  }
+
   // Public routes - anyone can access
-  const publicRoutes = ['/', '/login', '/signup', '/api'];
+  const publicRoutes = ['/', '/api'];
 
   const isPublicRoute = publicRoutes.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
@@ -20,10 +32,6 @@ export function middleware(request: NextRequest) {
   // For protected routes, check for session cookie existence
   // Actual session validation happens in the server components/API routes
   if (pathname.startsWith('/app')) {
-    const sessionCookie =
-      request.cookies.get('authjs.session-token') ||
-      request.cookies.get('__Secure-authjs.session-token');
-
     if (!sessionCookie) {
       const loginUrl = new URL('/login', request.url);
       loginUrl.searchParams.set('callbackUrl', pathname);
