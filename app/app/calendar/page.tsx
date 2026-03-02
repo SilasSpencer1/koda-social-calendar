@@ -190,7 +190,6 @@ export default function CalendarPage() {
 
     const created = await res.json();
 
-    // Invite guests if any
     if (data.guestIds.length > 0) {
       try {
         await fetch(`/api/events/${created.id}/invite`, {
@@ -204,7 +203,6 @@ export default function CalendarPage() {
       }
     }
 
-    // Refresh events
     fetchEvents();
     return { id: created.id };
   };
@@ -239,7 +237,6 @@ export default function CalendarPage() {
       throw new Error(errData.error || 'Failed to update event');
     }
 
-    // Invite new guests if any
     if (data.guestIds.length > 0) {
       try {
         await fetch(`/api/events/${eventId}/invite`, {
@@ -286,7 +283,6 @@ export default function CalendarPage() {
     }
   };
 
-  // Quick add from grid click
   const handleQuickSave = async (data: {
     title: string;
     startAt: Date;
@@ -308,7 +304,6 @@ export default function CalendarPage() {
     setQuickAdd(null);
   };
 
-  // Quick add -> "More options" opens full editor
   const handleMoreOptions = (data: {
     title: string;
     startAt: Date;
@@ -324,14 +319,12 @@ export default function CalendarPage() {
     setEditorOpen(true);
   };
 
-  // "Create" button -> open full editor with fresh defaults
   const handleCreateClick = () => {
     setEditingEvent(null);
     setEditorDefaults({});
     setEditorOpen(true);
   };
 
-  // Click existing event on grid -> show details popover
   const handleEventClick = (
     event: CalendarEvent,
     anchorX: number,
@@ -341,7 +334,6 @@ export default function CalendarPage() {
     setDetailsPopover({ event, anchorX, anchorY });
   };
 
-  // Click empty grid cell -> show quick add popover
   const handleEmptyCellClick = (
     startDate: Date,
     endDate: Date,
@@ -352,7 +344,13 @@ export default function CalendarPage() {
     setQuickAdd({ startDate, endDate, anchorX, anchorY });
   };
 
-  // From details popover -> open full editor
+  // Sync ghost block position when user adjusts times in the popover
+  const handleTimeChange = useCallback((start: Date, end: Date) => {
+    setQuickAdd((prev) =>
+      prev ? { ...prev, startDate: start, endDate: end } : null
+    );
+  }, []);
+
   const handleEditFromDetails = () => {
     if (!detailsPopover) return;
     const evt = detailsPopover.event;
@@ -362,7 +360,6 @@ export default function CalendarPage() {
     setEditorOpen(true);
   };
 
-  // From details popover -> delete
   const handleDeleteFromDetails = async () => {
     if (!detailsPopover) return;
     const eventId = detailsPopover.event.id;
@@ -370,14 +367,12 @@ export default function CalendarPage() {
     await deleteEvent(eventId);
   };
 
-  // From details popover -> navigate to full event page
   const handleViewDetails = () => {
     if (!detailsPopover) return;
     router.push(`/app/events/${detailsPopover.event.id}`);
     setDetailsPopover(null);
   };
 
-  // Agenda list click -> show details popover centered
   const handleAgendaEventClick = (event: CalendarEvent) => {
     setDetailsPopover({
       event,
@@ -386,7 +381,7 @@ export default function CalendarPage() {
     });
   };
 
-  // ── Find Time logic (preserved from original) ─────────
+  // ── Find Time logic ────────────────────────────────────
 
   const openFindTime = async () => {
     setShowFindTime(true);
@@ -511,9 +506,14 @@ export default function CalendarPage() {
 
       {/* Page content */}
       <div className="relative z-10 container max-w-7xl mx-auto px-4 py-12">
-        <div className="mb-8 flex items-start justify-between">
+        <div className="mb-8 flex items-start justify-between cal-fade-up">
           <div>
-            <h1 className="text-4xl font-bold text-slate-900 mb-2">Calendar</h1>
+            <h1
+              className="text-4xl font-bold text-slate-900 mb-2"
+              style={{ fontFamily: 'var(--font-fraunces, inherit)' }}
+            >
+              Calendar
+            </h1>
             <p className="text-slate-600">
               View and manage your events with friends
             </p>
@@ -528,7 +528,10 @@ export default function CalendarPage() {
 
         {loading && (
           <div className="flex items-center justify-center py-20">
-            <div className="text-slate-600">Loading your calendar...</div>
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full bg-blue-500 cal-time-pulse" />
+              <span className="text-slate-600">Loading your calendar...</span>
+            </div>
           </div>
         )}
 
@@ -540,11 +543,15 @@ export default function CalendarPage() {
 
         {!loading && !error && (
           <div className="space-y-8">
-            {/* Calendar grid - full width */}
             <CalendarGrid
               events={events}
               weekStart={weekStart}
               currentUserId={currentUserId}
+              selectedSlot={
+                quickAdd
+                  ? { start: quickAdd.startDate, end: quickAdd.endDate }
+                  : null
+              }
               onEventClick={(event, x, y) =>
                 handleEventClick(event as CalendarEvent, x, y)
               }
@@ -554,9 +561,11 @@ export default function CalendarPage() {
               onNextWeek={goToNextWeek}
             />
 
-            {/* Upcoming events - below calendar */}
             <div>
-              <h2 className="text-xl font-semibold text-slate-900 mb-4">
+              <h2
+                className="text-xl font-semibold text-slate-900 mb-4"
+                style={{ fontFamily: 'var(--font-fraunces, inherit)' }}
+              >
                 Upcoming Events
               </h2>
               <AgendaList
@@ -578,6 +587,7 @@ export default function CalendarPage() {
             onSave={handleQuickSave}
             onMoreOptions={handleMoreOptions}
             onClose={() => setQuickAdd(null)}
+            onTimeChange={handleTimeChange}
           />
         )}
 
@@ -607,14 +617,14 @@ export default function CalendarPage() {
           onDelete={deleteEvent}
         />
 
-        {/* ── Find Time Modal (preserved) ──────────────── */}
+        {/* ── Find Time Modal ──────────────────────────── */}
         {showFindTime && (
           <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
             onClick={() => setShowFindTime(false)}
           >
             <div
-              className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto"
+              className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto cal-slide-in"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex justify-between items-start mb-6">

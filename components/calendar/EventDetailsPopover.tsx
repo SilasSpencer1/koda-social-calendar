@@ -15,12 +15,31 @@ import {
   Users,
 } from 'lucide-react';
 
+// Event palette (matches CalendarGrid)
+const EVENT_PALETTES = [
+  { accent: '#6366F1' }, // indigo
+  { accent: '#14B8A6' }, // teal
+  { accent: '#A855F7' }, // purple
+  { accent: '#EC4899' }, // pink
+  { accent: '#F59E0B' }, // amber
+];
+
+function hashStr(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+function getEventAccent(eventId: string) {
+  return EVENT_PALETTES[hashStr(eventId) % EVENT_PALETTES.length].accent;
+}
+
 interface EventDetailsPopoverProps {
   event: CalendarEvent;
-  /** Viewport coords to anchor near */
   anchorX: number;
   anchorY: number;
-  /** Is current user the owner? */
   isOwner: boolean;
   onEdit: () => void;
   onDelete: () => void;
@@ -40,7 +59,6 @@ export function EventDetailsPopover({
 }: EventDetailsPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  // Close on Escape
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
@@ -49,7 +67,6 @@ export function EventDetailsPopover({
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
-  // Close on click outside
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (
@@ -87,6 +104,7 @@ export function EventDetailsPopover({
 
   const startTime = new Date(event.startAt);
   const endTime = new Date(event.endAt);
+  const accentColor = getEventAccent(event.id);
 
   const visibilityMap: Record<string, { label: string; color: string }> = {
     PRIVATE: { label: 'Private', color: 'text-orange-600 bg-orange-50' },
@@ -99,9 +117,14 @@ export function EventDetailsPopover({
 
   return (
     <div ref={popoverRef} style={computeStyle()}>
-      <div className="w-[360px] bg-white rounded-xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-95 duration-150">
-        {/* Color bar */}
-        <div className="h-2 bg-gradient-to-r from-blue-500 to-violet-500" />
+      <div className="w-[360px] bg-white rounded-xl border border-slate-200 shadow-2xl overflow-hidden cal-slide-in">
+        {/* Color bar — uses event's palette accent */}
+        <div
+          className="h-2"
+          style={{
+            background: `linear-gradient(90deg, ${accentColor}, ${accentColor}88)`,
+          }}
+        />
 
         <div className="p-4 space-y-3">
           {/* Header */}

@@ -4,6 +4,11 @@ import { prisma } from '@/lib/db/prisma';
 import { z } from 'zod';
 import { isAttendeeAnonymous } from '@/lib/policies/eventAccess';
 import type { EventVisibility, CoverMode } from '@prisma/client';
+import {
+  sendEventUpdatedEmail,
+  sendEventCancelledEmail,
+  isEmailEnabledForUser,
+} from '@/lib/email';
 
 const UpdateEventSchema = z.object({
   title: z.string().min(1).max(255).optional(),
@@ -166,6 +171,43 @@ export async function PATCH(
       },
     });
 
+    // Notify GOING attendees if material fields changed (time/location)
+    const materialFieldsChanged =
+      data.startAt !== undefined ||
+      data.endAt !== undefined ||
+      data.locationName !== undefined ||
+      data.timezone !== undefined;
+
+    if (materialFieldsChanged) {
+      const goingAttendees = await prisma.attendee.findMany({
+        where: {
+          eventId: id,
+          status: 'GOING',
+          userId: { not: session.user.id },
+        },
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+        },
+      });
+
+      for (const att of goingAttendees) {
+        isEmailEnabledForUser(att.user.id).then((enabled) => {
+          if (!enabled) return;
+          sendEventUpdatedEmail({
+            to: att.user.email,
+            attendeeName: att.user.name || 'there',
+            eventTitle: updated.title,
+            eventStartAt: updated.startAt,
+            eventTimezone: updated.timezone,
+            locationName: updated.locationName,
+            eventId: updated.id,
+          }).catch((err) =>
+            console.error('[EMAIL] event update notification failed:', err)
+          );
+        });
+      }
+    }
+
     return NextResponse.json(updated);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -193,9 +235,22 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Fetch event with attendees BEFORE deleting (cascade removes them)
     const event = await prisma.event.findUnique({
       where: { id },
-      select: { ownerId: true },
+      select: {
+        ownerId: true,
+        title: true,
+        startAt: true,
+        timezone: true,
+        owner: { select: { name: true } },
+        attendees: {
+          where: { userId: { not: undefined } },
+          include: {
+            user: { select: { id: true, name: true, email: true } },
+          },
+        },
+      },
     });
 
     if (!event) {
@@ -207,9 +262,31 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
+    // Collect attendees to notify before deletion
+    const attendeesToNotify = event.attendees.filter(
+      (a) => a.userId !== session.user!.id
+    );
+
     await prisma.event.delete({
       where: { id },
     });
+
+    // Fire-and-forget cancellation emails
+    for (const att of attendeesToNotify) {
+      isEmailEnabledForUser(att.user.id).then((enabled) => {
+        if (!enabled) return;
+        sendEventCancelledEmail({
+          to: att.user.email,
+          attendeeName: att.user.name || 'there',
+          hostName: event.owner.name || 'The host',
+          eventTitle: event.title,
+          eventStartAt: event.startAt,
+          eventTimezone: event.timezone,
+        }).catch((err) =>
+          console.error('[EMAIL] cancellation notification failed:', err)
+        );
+      });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

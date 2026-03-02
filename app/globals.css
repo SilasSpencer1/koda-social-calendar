@@ -385,3 +385,76 @@
   background-clip: text;
   text-fill-color: transparent;
 }
+
+/* ── Calendar enhancements ───────────────────────────────── */
+
+@keyframes calFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes calPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes calSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.cal-fade-up {
+  animation: calFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cal-slide-in {
+  animation: calSlideIn 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cal-time-pulse {
+  animation: calPulse 2s ease-in-out infinite;
+}
+
+/* Calendar event block — left accent border */
+.cal-event {
+  border-left: 3px solid currentColor;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.cal-event:hover {
+  transform: scale(1.02);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
+}
+
+/* Ghost selection block — gentle pulse */
+@keyframes calGhostPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.cal-ghost-block {
+  animation: calGhostPulse 2s ease-in-out infinite;
+}
