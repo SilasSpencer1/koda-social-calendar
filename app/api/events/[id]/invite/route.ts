@@ -2,31 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { z } from 'zod';
+import { sendInviteEmail, isEmailEnabledForUser } from '@/lib/email';
 
 const InviteSchema = z.object({
   userIds: z.array(z.string()).min(1),
 });
-
-async function sendInviteEmail(
-  inviteeEmail: string,
-  eventTitle: string,
-  eventTime: string
-) {
-  const emailEnabled = process.env.EMAIL_ENABLED === 'true';
-  if (!emailEnabled) {
-    console.log(
-      `[EMAIL] Dev mode: Event invite for ${inviteeEmail} - ${eventTitle} at ${eventTime}`
-    );
-    return;
-  }
-
-  try {
-    // Will be implemented with Resend
-    console.log(`[EMAIL] Sending invite to ${inviteeEmail} for ${eventTitle}`);
-  } catch (error) {
-    console.error('[SEND_EMAIL]', error);
-  }
-}
 
 export async function POST(
   request: NextRequest,
@@ -46,6 +26,7 @@ export async function POST(
         ownerId: true,
         title: true,
         startAt: true,
+        timezone: true,
         attendees: {
           select: { userId: true },
         },
@@ -170,12 +151,19 @@ export async function POST(
           },
         });
 
-        // Send email notification
-        await sendInviteEmail(
-          invitee.email,
-          event.title,
-          event.startAt.toISOString()
-        );
+        // Send email notification (non-blocking)
+        isEmailEnabledForUser(invitee.id).then((enabled) => {
+          if (!enabled) return;
+          sendInviteEmail({
+            to: invitee.email,
+            inviteeName: invitee.name || 'there',
+            hostName: session.user?.name || 'Someone',
+            eventTitle: event.title,
+            eventStartAt: event.startAt,
+            eventTimezone: event.timezone,
+            eventId: event.id,
+          }).catch((err) => console.error('[EMAIL] invite failed:', err));
+        });
 
         return attendee;
       })

@@ -8,6 +8,19 @@ import {
   invertToFree,
   type Interval,
 } from '@/lib/availability';
+import {
+  MapPin,
+  Clock,
+  Star,
+  X,
+  ExternalLink,
+  CalendarPlus,
+  Bookmark,
+  AlertTriangle,
+  Compass,
+  Search,
+  Plus,
+} from 'lucide-react';
 
 // --------------- types ---------------
 
@@ -58,13 +71,66 @@ const INTEREST_OPTIONS = [
   'coffee',
 ];
 
-// --------------- helpers ---------------
+// --------------- visual helpers ---------------
+
+function getTimeOfDay(isoString: string): {
+  label: string;
+  accent: string;
+} {
+  const h = new Date(isoString).getHours();
+  if (h < 12)
+    return {
+      label: 'Morning',
+      accent: 'from-amber-400/20 to-orange-400/20',
+    };
+  if (h < 14)
+    return {
+      label: 'Midday',
+      accent: 'from-orange-400/20 to-rose-400/20',
+    };
+  if (h < 17)
+    return {
+      label: 'Afternoon',
+      accent: 'from-sky-400/20 to-blue-400/20',
+    };
+  if (h < 20)
+    return {
+      label: 'Evening',
+      accent: 'from-violet-400/20 to-purple-400/20',
+    };
+  return {
+    label: 'Night',
+    accent: 'from-indigo-400/20 to-blue-400/20',
+  };
+}
+
+function formatSlotDay(isoString: string): string {
+  return new Date(isoString).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function formatSlotTime(isoString: string): string {
+  return new Date(isoString).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+// --------------- slot generation ---------------
 
 function generateFreeSlots(
   events: Array<{ startAt: string; endAt: string }>,
   days: number
 ): Slot[] {
   const now = new Date();
+  const minNoticeHours = 2; // require at least 2 hours notice
+  const minNoticeMs = minNoticeHours * 60 * 60 * 1000;
+  const slotDurationHours = 2; // 2-hour blocks
+
   const rangeEnd = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
   const busy: Interval[] = events.map((e) => ({
@@ -76,14 +142,12 @@ function generateFreeSlots(
   const range: Interval = { start: now.getTime(), end: rangeEnd.getTime() };
   const free = invertToFree(merged, range);
 
-  // Generate evening-ish slots (roughly 6pm-9pm each day) from free time
   const slots: Slot[] = [];
 
-  for (let d = 0; d < days && slots.length < 14; d++) {
+  for (let d = 0; d < days && slots.length < 5; d++) {
     const dayDate = new Date(now);
     dayDate.setDate(dayDate.getDate() + d);
 
-    // Try a few time windows per day
     const windows = [
       { hour: 10, label: 'Morning' },
       { hour: 12, label: 'Lunch' },
@@ -93,13 +157,17 @@ function generateFreeSlots(
     ];
 
     for (const w of windows) {
+      if (slots.length >= 5) break;
+
       const slotStart = new Date(dayDate);
       slotStart.setHours(w.hour, 0, 0, 0);
-      const slotEnd = new Date(slotStart.getTime() + 3 * 60 * 60 * 1000); // 3h
+      const slotEnd = new Date(
+        slotStart.getTime() + slotDurationHours * 60 * 60 * 1000
+      );
 
-      if (slotStart.getTime() < now.getTime()) continue;
+      // Require minimum notice period
+      if (slotStart.getTime() < now.getTime() + minNoticeMs) continue;
 
-      // Check if this slot overlaps with any free interval
       const isFree = free.some(
         (f) => f.start <= slotStart.getTime() && f.end >= slotEnd.getTime()
       );
@@ -139,6 +207,10 @@ export default function DiscoverPage() {
   // Slots
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const [useCustomTime, setUseCustomTime] = useState(false);
+  const [customDate, setCustomDate] = useState('');
+  const [customTime, setCustomTime] = useState('12:00');
+  const [customDuration, setCustomDuration] = useState(2);
 
   // Suggestions
   const [suggestions, setSuggestions] = useState<SuggestionCard[]>([]);
@@ -198,14 +270,13 @@ export default function DiscoverPage() {
   const savePrefs = useCallback(
     async (updated: Partial<Preferences>) => {
       setPrefsSaving(true);
-      const merged = { ...prefs, ...updated };
-      setPrefs(merged);
       try {
         await fetch('/api/me/discover-preferences', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(merged),
+          body: JSON.stringify({ ...prefs, ...updated }),
         });
+        setPrefs((prev) => ({ ...prev, ...updated }));
       } catch {
         // ignore
       } finally {
@@ -215,37 +286,31 @@ export default function DiscoverPage() {
     [prefs]
   );
 
-  // Fetch suggestions for selected slot
+  // Fetch suggestions for a slot
   const fetchSuggestions = useCallback(
     async (slot: Slot) => {
       if (!prefs.city) {
-        setSuggestionsError('Please enter your city above to get suggestions.');
+        setSuggestionsError(
+          'Set your city above to get personalized suggestions.'
+        );
+        setSuggestions([]);
         return;
       }
-
       setSuggestionsLoading(true);
       setSuggestionsError(null);
-      setSuggestions([]);
-
       try {
         const url = new URL('/api/suggestions', window.location.origin);
         url.searchParams.set('slotStart', slot.start);
         url.searchParams.set('slotEnd', slot.end);
-
         const res = await fetch(url.toString());
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(
-            data.error || `Failed to fetch suggestions (${res.status})`
-          );
-        }
-
+        if (!res.ok) throw new Error('Failed to load suggestions');
         const data = await res.json();
-        setSuggestions(data);
+        setSuggestions(Array.isArray(data) ? data : []);
       } catch (err) {
         setSuggestionsError(
-          err instanceof Error ? err.message : 'Unknown error'
+          err instanceof Error ? err.message : 'Failed to fetch'
         );
+        setSuggestions([]);
       } finally {
         setSuggestionsLoading(false);
       }
@@ -254,6 +319,27 @@ export default function DiscoverPage() {
   );
 
   const handleSlotClick = (slot: Slot) => {
+    setSelectedSlot(slot);
+    setUseCustomTime(false);
+    fetchSuggestions(slot);
+  };
+
+  const handleCustomTimeSubmit = () => {
+    if (!customDate || !customTime) return;
+
+    const start = new Date(`${customDate}T${customTime}`);
+    const end = new Date(start.getTime() + customDuration * 60 * 60 * 1000);
+
+    if (start.getTime() < new Date().getTime()) {
+      return;
+    }
+
+    const slot: Slot = {
+      start: start.toISOString(),
+      end: end.toISOString(),
+      label: `${formatSlotDay(start.toISOString())} ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} - ${end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`,
+    };
+
     setSelectedSlot(slot);
     fetchSuggestions(slot);
   };
@@ -284,7 +370,6 @@ export default function DiscoverPage() {
         return;
       }
 
-      // Update local state
       if (action === 'dismiss') {
         setSuggestions((prev) => prev.filter((s) => s.id !== suggestionId));
       } else {
@@ -301,17 +386,24 @@ export default function DiscoverPage() {
     }
   };
 
+  // ── Loading state ─────────────────────────────────────
+
   if (prefsLoading) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-violet-50">
         <div className="container max-w-7xl mx-auto px-4 py-12">
           <div className="flex items-center justify-center py-20">
-            <div className="text-slate-600">Loading Discover...</div>
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full bg-blue-500 cal-time-pulse" />
+              <span className="text-slate-600">Loading Discover...</span>
+            </div>
           </div>
         </div>
       </main>
     );
   }
+
+  // ── Main render ───────────────────────────────────────
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-violet-50">
@@ -321,17 +413,28 @@ export default function DiscoverPage() {
       </div>
 
       <div className="relative z-10 container max-w-7xl mx-auto px-4 py-12">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-slate-900 mb-2">Discover</h1>
+        {/* ── Header (title only) ─────────────────────── */}
+        <div className="mb-8 cal-fade-up">
+          <h1
+            className="text-4xl font-bold text-slate-900 mb-2"
+            style={{ fontFamily: 'var(--font-fraunces, inherit)' }}
+          >
+            Discover
+          </h1>
           <p className="text-slate-600">Find things to do in your free time</p>
         </div>
 
-        {/* Preferences bar */}
-        <div className="mb-8 bg-white/70 backdrop-blur-md rounded-2xl border border-white/30 p-6 shadow-lg">
-          <div className="flex flex-wrap gap-4 items-end mb-4">
-            <div className="flex-1 min-w-[200px]">
-              <label className="block text-sm font-semibold text-slate-700 mb-1">
+        {/* ── Unified filter panel ────────────────────── */}
+        {/* NOTE: uses bg-white/90 instead of backdrop-blur-md to avoid    */}
+        {/* creating a stacking context that traps the city autocomplete    */}
+        <div
+          className="mb-10 bg-white/90 rounded-2xl border border-slate-200/60 p-5 shadow-md cal-fade-up"
+          style={{ animationDelay: '0.05s' }}
+        >
+          {/* Top row: City + Radius */}
+          <div className="relative z-20 flex flex-wrap items-end gap-4 mb-4">
+            <div className="w-56">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
                 City
               </label>
               <CityAutocomplete
@@ -339,11 +442,11 @@ export default function DiscoverPage() {
                 onChange={(v) => setPrefs({ ...prefs, city: v })}
                 onBlur={() => savePrefs({ city: prefs.city })}
                 placeholder="e.g. New York"
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
               />
             </div>
             <div className="w-40">
-              <label className="block text-sm font-semibold text-slate-700 mb-1">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
                 Radius ({prefs.radiusMiles} mi)
               </label>
               <input
@@ -364,17 +467,17 @@ export default function DiscoverPage() {
                     radiusMiles: Number((e.target as HTMLInputElement).value),
                   })
                 }
-                className="w-full"
+                className="w-full accent-blue-500"
               />
             </div>
             {prefsSaving && (
-              <span className="text-xs text-slate-500">Saving...</span>
+              <span className="text-xs text-slate-400 pb-1">Saving...</span>
             )}
           </div>
 
-          {/* Interest chips */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">
+          {/* Interest chips (wrapping) */}
+          <div className="relative z-10">
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
               Interests
             </label>
             <div className="flex flex-wrap gap-2">
@@ -382,10 +485,10 @@ export default function DiscoverPage() {
                 <button
                   key={interest}
                   onClick={() => toggleInterest(interest)}
-                  className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                  className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
                     prefs.interests.includes(interest)
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      ? 'bg-blue-500 text-white shadow-md shadow-blue-500/25'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
                   }`}
                 >
                   {interest}
@@ -395,175 +498,336 @@ export default function DiscoverPage() {
           </div>
         </div>
 
-        {/* Main layout: slots + suggestions */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Slot rail */}
-          <div className="lg:col-span-1">
-            <h2 className="text-lg font-semibold text-slate-900 mb-3">
-              Free Slots
+        {/* ── Step 1: Pick a time ─────────────────────── */}
+        <div className="mb-8 cal-fade-up" style={{ animationDelay: '0.1s' }}>
+          <div className="flex items-center gap-2.5 mb-4">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold">
+              1
+            </span>
+            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">
+              Pick a time
             </h2>
-            {slots.length === 0 ? (
+          </div>
+
+          {/* Toggle between presets and custom */}
+          <div className="flex items-center gap-2 mb-4">
+            <button
+              onClick={() => setUseCustomTime(false)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                !useCustomTime
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Suggested times
+            </button>
+            <button
+              onClick={() => setUseCustomTime(true)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5 ${
+                useCustomTime
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <Plus className="size-3.5" />
+              Pick my own
+            </button>
+          </div>
+
+          {useCustomTime ? (
+            <div className="bg-white rounded-xl border border-slate-200/60 p-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    Time
+                  </label>
+                  <input
+                    type="time"
+                    value={customTime}
+                    onChange={(e) => setCustomTime(e.target.value)}
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    Duration
+                  </label>
+                  <select
+                    value={customDuration}
+                    onChange={(e) => setCustomDuration(Number(e.target.value))}
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
+                  >
+                    <option value={1}>1 hour</option>
+                    <option value={2}>2 hours</option>
+                    <option value={3}>3 hours</option>
+                    <option value={4}>4 hours</option>
+                  </select>
+                </div>
+                <button
+                  onClick={handleCustomTimeSubmit}
+                  disabled={!customDate || !customTime}
+                  className="px-4 py-2 bg-blue-500 text-white text-sm font-semibold rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          ) : slots.length === 0 ? (
+            <div className="bg-white/50 backdrop-blur-sm rounded-xl border border-slate-200/50 p-6 text-center">
               <p className="text-sm text-slate-500">
                 No free slots found in the next 7 days.
               </p>
-            ) : (
-              <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
-                {slots.map((slot) => (
-                  <button
-                    key={slot.start}
-                    onClick={() => handleSlotClick(slot)}
-                    className={`w-full text-left p-3 rounded-xl text-sm transition-all ${
-                      selectedSlot?.start === slot.start
-                        ? 'bg-blue-500 text-white shadow-md'
-                        : 'bg-white/70 border border-white/30 text-slate-700 hover:bg-blue-50'
-                    }`}
-                  >
-                    {slot.label}
-                  </button>
-                ))}
+            </div>
+          ) : (
+            <div>
+              <div className="flex gap-3 overflow-x-auto pb-3 -mx-1 px-1">
+                {slots.map((slot) => {
+                  const tod = getTimeOfDay(slot.start);
+                  const isSelected = selectedSlot?.start === slot.start;
+                  return (
+                    <button
+                      key={slot.start}
+                      onClick={() => handleSlotClick(slot)}
+                      className={`flex-shrink-0 w-36 p-3 rounded-xl text-left cursor-pointer transition-all duration-200 ${
+                        isSelected
+                          ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30 scale-[1.03] border-2 border-blue-400'
+                          : 'bg-white border border-slate-200/60 text-slate-700 hover:border-blue-300 hover:shadow-md hover:scale-[1.02]'
+                      }`}
+                    >
+                      <div
+                        className={`text-xs font-medium mb-0.5 ${isSelected ? 'text-blue-100' : 'text-slate-400'}`}
+                      >
+                        {formatSlotDay(slot.start)}
+                      </div>
+                      <div
+                        className={`text-sm font-semibold ${isSelected ? 'text-white' : 'text-slate-900'}`}
+                      >
+                        {tod.label}
+                      </div>
+                      <div
+                        className={`text-xs mt-0.5 ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}
+                      >
+                        {formatSlotTime(slot.start)} –{' '}
+                        {formatSlotTime(slot.end)}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-            )}
+
+              {/* Inline prompt when no slot selected */}
+              {!selectedSlot && (
+                <p className="text-sm text-slate-400 mt-2 flex items-center gap-1.5">
+                  <Compass className="size-3.5" />
+                  Select a slot to see suggestions
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Step 2: Explore suggestions ─────────────── */}
+        <div className="cal-fade-up" style={{ animationDelay: '0.15s' }}>
+          <div className="flex items-center gap-2.5 mb-4">
+            <span
+              className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold ${selectedSlot ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-400'}`}
+            >
+              2
+            </span>
+            <h2
+              className={`text-sm font-semibold uppercase tracking-wider ${selectedSlot ? 'text-slate-700' : 'text-slate-400'}`}
+            >
+              Explore suggestions
+            </h2>
           </div>
 
-          {/* Suggestions panel */}
-          <div className="lg:col-span-3">
-            {!selectedSlot ? (
-              <div className="flex items-center justify-center py-20 bg-white/50 rounded-2xl border border-white/30">
-                <p className="text-slate-500">
-                  Select a free slot to see suggestions
-                </p>
+          {!selectedSlot ? (
+            <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center">
+              <p className="text-sm text-slate-400">
+                Suggestions will appear here after you pick a time
+              </p>
+            </div>
+          ) : suggestionsLoading ? (
+            <div className="flex flex-col items-center justify-center py-24 bg-white/40 backdrop-blur-sm rounded-2xl border border-white/30">
+              <Search className="size-8 text-blue-400 mb-3 animate-pulse" />
+              <p className="text-slate-600">Finding suggestions...</p>
+            </div>
+          ) : suggestionsError ? (
+            <div className="p-5 rounded-xl bg-red-50/80 border border-red-200/60 text-red-700 text-sm flex items-start gap-3">
+              <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+              <span>{suggestionsError}</span>
+            </div>
+          ) : suggestions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 bg-white/40 backdrop-blur-sm rounded-2xl border border-white/30">
+              <MapPin className="size-8 text-slate-300 mb-3" />
+              <p className="text-slate-500 font-medium mb-1">
+                Nothing found for this slot
+              </p>
+              <p className="text-slate-400 text-sm">
+                Try different interests or a larger radius
+              </p>
+            </div>
+          ) : (
+            <div>
+              {/* Section header */}
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    {suggestions.length} suggestion
+                    {suggestions.length !== 1 ? 's' : ''}
+                  </h2>
+                  <p className="text-sm text-slate-500">
+                    {formatSlotDay(selectedSlot.start)} &middot;{' '}
+                    {formatSlotTime(selectedSlot.start)} –{' '}
+                    {formatSlotTime(selectedSlot.end)}
+                  </p>
+                </div>
               </div>
-            ) : suggestionsLoading ? (
-              <div className="flex items-center justify-center py-20 bg-white/50 rounded-2xl border border-white/30">
-                <p className="text-slate-600">Loading suggestions...</p>
-              </div>
-            ) : suggestionsError ? (
-              <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
-                {suggestionsError}
-              </div>
-            ) : suggestions.length === 0 ? (
-              <div className="flex items-center justify-center py-20 bg-white/50 rounded-2xl border border-white/30">
-                <p className="text-slate-500">
-                  No suggestions found for this slot. Try different interests or
-                  a larger radius.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Low confidence banner */}
-                {suggestions.some((s) => s.confidence === 'LOW') && (
-                  <div className="p-3 rounded-xl bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm">
-                    Some suggestions have unknown opening hours. They may be
-                    closed during this time.
-                  </div>
-                )}
 
-                {suggestions.map((s) => (
+              {/* Low confidence banner */}
+              {suggestions.some((s) => s.confidence === 'LOW') && (
+                <div className="mb-5 p-3 rounded-xl bg-amber-50/80 border border-amber-200/60 text-amber-800 text-sm flex items-start gap-2">
+                  <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber-500" />
+                  <span>
+                    Some suggestions have unknown opening hours and may be
+                    closed.
+                  </span>
+                </div>
+              )}
+
+              {/* Suggestion cards grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {suggestions.map((s, i) => (
                   <div
                     key={s.id}
-                    className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/30 p-5 shadow-md flex gap-4"
+                    className="group bg-white/70 backdrop-blur-md rounded-2xl border border-white/30 overflow-hidden shadow-sm hover:shadow-lg hover:bg-white/90 transition-all duration-300 cal-fade-up"
+                    style={{ animationDelay: `${0.05 * i}s` }}
                   >
                     {/* Image */}
                     {s.imageUrl && (
-                      <div className="w-24 h-24 flex-shrink-0 rounded-xl overflow-hidden bg-slate-100">
+                      <div className="h-36 overflow-hidden bg-slate-100">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={s.imageUrl}
                           alt={s.title}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         />
                       </div>
                     )}
 
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <h3 className="font-semibold text-slate-900 truncate">
-                          {s.title}
-                        </h3>
-                        <div className="flex gap-1 flex-shrink-0">
-                          <span
-                            className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-                              s.source === 'TICKETMASTER'
-                                ? 'bg-violet-100 text-violet-700'
-                                : 'bg-green-100 text-green-700'
-                            }`}
-                          >
-                            {s.source === 'TICKETMASTER' ? 'Event' : 'Place'}
+                    <div className="p-4">
+                      {/* Badges row */}
+                      <div className="flex gap-1.5 mb-2">
+                        <span
+                          className={`px-2 py-0.5 text-[10px] uppercase tracking-wider rounded-md font-semibold ${
+                            s.source === 'TICKETMASTER'
+                              ? 'bg-violet-100/80 text-violet-700'
+                              : 'bg-emerald-100/80 text-emerald-700'
+                          }`}
+                        >
+                          {s.source === 'TICKETMASTER' ? 'Event' : 'Place'}
+                        </span>
+                        {s.confidence === 'LOW' && (
+                          <span className="px-2 py-0.5 text-[10px] uppercase tracking-wider rounded-md font-semibold bg-amber-100/80 text-amber-700">
+                            Hours unknown
                           </span>
-                          {s.confidence === 'LOW' && (
-                            <span className="px-2 py-0.5 text-xs rounded-full font-medium bg-yellow-100 text-yellow-700">
-                              Hours unknown
-                            </span>
-                          )}
-                        </div>
+                        )}
+                        {s.status === 'SAVED' && (
+                          <span className="px-2 py-0.5 text-[10px] uppercase tracking-wider rounded-md font-semibold bg-blue-100/80 text-blue-700">
+                            Saved
+                          </span>
+                        )}
                       </div>
 
-                      {s.category && (
-                        <p className="text-xs text-slate-500 mb-1">
-                          {s.category}
-                        </p>
-                      )}
+                      {/* Title */}
+                      <h3 className="font-semibold text-slate-900 truncate mb-1 group-hover:text-blue-600 transition-colors">
+                        {s.title}
+                      </h3>
 
-                      {s.venueName && s.venueName !== s.title && (
-                        <p className="text-sm text-slate-600">{s.venueName}</p>
-                      )}
+                      {/* Meta */}
+                      <div className="space-y-0.5 mb-2">
+                        {s.category && (
+                          <p className="text-xs text-slate-500">{s.category}</p>
+                        )}
+                        {s.venueName && s.venueName !== s.title && (
+                          <p className="text-xs text-slate-600 font-medium">
+                            {s.venueName}
+                          </p>
+                        )}
+                        {s.address && (
+                          <p className="text-xs text-slate-400 truncate">
+                            {s.address}
+                          </p>
+                        )}
+                        {s.distanceMiles != null && (
+                          <p className="text-xs text-slate-400">
+                            <MapPin className="size-3 inline -mt-0.5 mr-0.5" />
+                            {s.distanceMiles} mi away
+                          </p>
+                        )}
+                      </div>
 
-                      {s.address && (
-                        <p className="text-xs text-slate-500 truncate">
-                          {s.address}
-                        </p>
-                      )}
-
-                      {s.distanceMiles != null && (
-                        <p className="text-xs text-slate-500">
-                          {s.distanceMiles} mi away
-                        </p>
-                      )}
-
+                      {/* Description */}
                       {s.description && (
-                        <p className="text-sm text-slate-600 mt-1 line-clamp-2">
+                        <p className="text-xs text-slate-500 line-clamp-2 mb-3">
                           {s.description}
                         </p>
                       )}
 
                       {/* Actions */}
-                      <div className="flex gap-2 mt-3">
+                      <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100">
                         <button
                           onClick={() => handleAction(s.id, 'add-to-calendar')}
                           disabled={actionLoading === s.id}
-                          className="px-3 py-1.5 text-xs font-semibold bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50"
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50"
                         >
-                          Add to Calendar
+                          <CalendarPlus className="size-3.5" />
+                          Add
                         </button>
                         {s.status !== 'SAVED' ? (
                           <button
                             onClick={() => handleAction(s.id, 'save')}
                             disabled={actionLoading === s.id}
-                            className="px-3 py-1.5 text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg transition-colors disabled:opacity-50"
+                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-lg transition-colors disabled:opacity-50"
                           >
+                            <Bookmark className="size-3.5" />
                             Save
                           </button>
                         ) : (
-                          <span className="px-3 py-1.5 text-xs font-semibold text-green-700 bg-green-50 rounded-lg">
+                          <span className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 rounded-lg">
+                            <Star className="size-3.5 fill-current" />
                             Saved
                           </span>
                         )}
                         <button
                           onClick={() => handleAction(s.id, 'dismiss')}
                           disabled={actionLoading === s.id}
-                          className="px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-red-600 transition-colors disabled:opacity-50"
+                          className="p-1.5 text-slate-400 hover:text-red-500 transition-colors disabled:opacity-50 ml-auto"
+                          title="Dismiss"
                         >
-                          Dismiss
+                          <X className="size-3.5" />
                         </button>
                         {s.url && (
                           <a
                             href={s.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-3 py-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"
+                            title="View details"
                           >
-                            Details &rarr;
+                            <ExternalLink className="size-3.5" />
                           </a>
                         )}
                       </div>
@@ -571,8 +835,8 @@ export default function DiscoverPage() {
                   </div>
                 ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </main>

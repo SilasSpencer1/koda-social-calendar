@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db/prisma';
 import { z } from 'zod';
+import {
+  sendRsvpAcceptedEmail,
+  sendRsvpDeclinedEmail,
+  isEmailEnabledForUser,
+} from '@/lib/email';
 
 const RSVPSchema = z.object({
   status: z.enum(['GOING', 'DECLINED']),
@@ -21,7 +26,7 @@ export async function POST(
     const body = await request.json();
     const { status } = RSVPSchema.parse(body);
 
-    // Find attendee record (include event to check dates)
+    // Find attendee record (include event + owner for notifications)
     const attendee = await prisma.attendee.findUnique({
       where: {
         eventId_userId: {
@@ -30,7 +35,16 @@ export async function POST(
         },
       },
       include: {
-        event: { select: { endAt: true } },
+        event: {
+          select: {
+            id: true,
+            title: true,
+            endAt: true,
+            ownerId: true,
+            owner: { select: { id: true, name: true, email: true } },
+          },
+        },
+        user: { select: { name: true } },
       },
     });
 
@@ -54,6 +68,45 @@ export async function POST(
       where: { id: attendee.id },
       data: { status },
     });
+
+    // Notify event host about the RSVP
+    const host = attendee.event.owner;
+    const attendeeName = attendee.user.name || 'Someone';
+
+    if (host.id !== session.user.id) {
+      // In-app notification
+      await prisma.notification.create({
+        data: {
+          userId: host.id,
+          type: 'EVENT_INVITE',
+          title:
+            status === 'GOING'
+              ? `${attendeeName} is going to your event`
+              : `${attendeeName} declined your event`,
+          body:
+            status === 'GOING'
+              ? `${attendeeName} accepted your invite to "${attendee.event.title}"`
+              : `${attendeeName} declined your invite to "${attendee.event.title}"`,
+          href: `/app/events/${attendee.event.id}`,
+        },
+      });
+
+      // Email notification (non-blocking)
+      isEmailEnabledForUser(host.id).then((enabled) => {
+        if (!enabled) return;
+        const emailFn =
+          status === 'GOING' ? sendRsvpAcceptedEmail : sendRsvpDeclinedEmail;
+        emailFn({
+          to: host.email,
+          hostName: host.name || 'there',
+          attendeeName,
+          eventTitle: attendee.event.title,
+          eventId: attendee.event.id,
+        }).catch((err) =>
+          console.error('[EMAIL] RSVP notification failed:', err)
+        );
+      });
+    }
 
     return NextResponse.json(updated);
   } catch (error) {

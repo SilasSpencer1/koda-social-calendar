@@ -9,14 +9,17 @@
 // ── Grid window ──────────────────────────────────────────────
 
 /** First visible hour (inclusive). */
-export const GRID_START_HOUR = 8; // 8 am
+export const GRID_START_HOUR = 0; // 12 am (midnight)
 
 /** Last visible hour (exclusive — grid ends at the start of this hour). */
-export const GRID_END_HOUR = 22; // 10 pm
+export const GRID_END_HOUR = 24; // 12 am (next day)
+
+/** Default scroll-to hour when the grid first mounts. */
+export const GRID_DEFAULT_SCROLL_HOUR = 8; // 8 am
 
 /**
- * Array of hour labels.  Length = GRID_END_HOUR − GRID_START_HOUR (14).
- * Each entry is the starting hour of a row: 8, 9, … 21.
+ * Array of hour labels.  Length = GRID_END_HOUR − GRID_START_HOUR (24).
+ * Each entry is the starting hour of a row: 0, 1, … 23.
  */
 export const HOURS: number[] = Array.from(
   { length: GRID_END_HOUR - GRID_START_HOUR },
