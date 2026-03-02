@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Compass,
   Search,
+  Plus,
 } from 'lucide-react';
 
 // --------------- types ---------------
@@ -74,37 +75,31 @@ const INTEREST_OPTIONS = [
 
 function getTimeOfDay(isoString: string): {
   label: string;
-  emoji: string;
   accent: string;
 } {
   const h = new Date(isoString).getHours();
   if (h < 12)
     return {
       label: 'Morning',
-      emoji: '☀️',
       accent: 'from-amber-400/20 to-orange-400/20',
     };
   if (h < 14)
     return {
       label: 'Midday',
-      emoji: '🍽️',
       accent: 'from-orange-400/20 to-rose-400/20',
     };
   if (h < 17)
     return {
       label: 'Afternoon',
-      emoji: '⛅',
       accent: 'from-sky-400/20 to-blue-400/20',
     };
   if (h < 20)
     return {
       label: 'Evening',
-      emoji: '🌆',
       accent: 'from-violet-400/20 to-purple-400/20',
     };
   return {
     label: 'Night',
-    emoji: '🌙',
     accent: 'from-indigo-400/20 to-blue-400/20',
   };
 }
@@ -132,6 +127,10 @@ function generateFreeSlots(
   days: number
 ): Slot[] {
   const now = new Date();
+  const minNoticeHours = 2; // require at least 2 hours notice
+  const minNoticeMs = minNoticeHours * 60 * 60 * 1000;
+  const slotDurationHours = 2; // 2-hour blocks
+
   const rangeEnd = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
   const busy: Interval[] = events.map((e) => ({
@@ -145,7 +144,7 @@ function generateFreeSlots(
 
   const slots: Slot[] = [];
 
-  for (let d = 0; d < days && slots.length < 14; d++) {
+  for (let d = 0; d < days && slots.length < 5; d++) {
     const dayDate = new Date(now);
     dayDate.setDate(dayDate.getDate() + d);
 
@@ -158,11 +157,16 @@ function generateFreeSlots(
     ];
 
     for (const w of windows) {
+      if (slots.length >= 5) break;
+
       const slotStart = new Date(dayDate);
       slotStart.setHours(w.hour, 0, 0, 0);
-      const slotEnd = new Date(slotStart.getTime() + 3 * 60 * 60 * 1000);
+      const slotEnd = new Date(
+        slotStart.getTime() + slotDurationHours * 60 * 60 * 1000
+      );
 
-      if (slotStart.getTime() < now.getTime()) continue;
+      // Require minimum notice period
+      if (slotStart.getTime() < now.getTime() + minNoticeMs) continue;
 
       const isFree = free.some(
         (f) => f.start <= slotStart.getTime() && f.end >= slotEnd.getTime()
@@ -203,6 +207,10 @@ export default function DiscoverPage() {
   // Slots
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const [useCustomTime, setUseCustomTime] = useState(false);
+  const [customDate, setCustomDate] = useState('');
+  const [customTime, setCustomTime] = useState('12:00');
+  const [customDuration, setCustomDuration] = useState(2);
 
   // Suggestions
   const [suggestions, setSuggestions] = useState<SuggestionCard[]>([]);
@@ -311,6 +319,27 @@ export default function DiscoverPage() {
   );
 
   const handleSlotClick = (slot: Slot) => {
+    setSelectedSlot(slot);
+    setUseCustomTime(false);
+    fetchSuggestions(slot);
+  };
+
+  const handleCustomTimeSubmit = () => {
+    if (!customDate || !customTime) return;
+
+    const start = new Date(`${customDate}T${customTime}`);
+    const end = new Date(start.getTime() + customDuration * 60 * 60 * 1000);
+
+    if (start.getTime() < new Date().getTime()) {
+      return;
+    }
+
+    const slot: Slot = {
+      start: start.toISOString(),
+      end: end.toISOString(),
+      label: `${formatSlotDay(start.toISOString())} ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} - ${end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`,
+    };
+
     setSelectedSlot(slot);
     fetchSuggestions(slot);
   };
@@ -480,7 +509,82 @@ export default function DiscoverPage() {
             </h2>
           </div>
 
-          {slots.length === 0 ? (
+          {/* Toggle between presets and custom */}
+          <div className="flex items-center gap-2 mb-4">
+            <button
+              onClick={() => setUseCustomTime(false)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                !useCustomTime
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Suggested times
+            </button>
+            <button
+              onClick={() => setUseCustomTime(true)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5 ${
+                useCustomTime
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <Plus className="size-3.5" />
+              Pick my own
+            </button>
+          </div>
+
+          {useCustomTime ? (
+            <div className="bg-white rounded-xl border border-slate-200/60 p-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    Time
+                  </label>
+                  <input
+                    type="time"
+                    value={customTime}
+                    onChange={(e) => setCustomTime(e.target.value)}
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    Duration
+                  </label>
+                  <select
+                    value={customDuration}
+                    onChange={(e) => setCustomDuration(Number(e.target.value))}
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
+                  >
+                    <option value={1}>1 hour</option>
+                    <option value={2}>2 hours</option>
+                    <option value={3}>3 hours</option>
+                    <option value={4}>4 hours</option>
+                  </select>
+                </div>
+                <button
+                  onClick={handleCustomTimeSubmit}
+                  disabled={!customDate || !customTime}
+                  className="px-4 py-2 bg-blue-500 text-white text-sm font-semibold rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          ) : slots.length === 0 ? (
             <div className="bg-white/50 backdrop-blur-sm rounded-xl border border-slate-200/50 p-6 text-center">
               <p className="text-sm text-slate-500">
                 No free slots found in the next 7 days.
@@ -502,7 +606,6 @@ export default function DiscoverPage() {
                           : 'bg-white border border-slate-200/60 text-slate-700 hover:border-blue-300 hover:shadow-md hover:scale-[1.02]'
                       }`}
                     >
-                      <div className="text-lg mb-1">{tod.emoji}</div>
                       <div
                         className={`text-xs font-medium mb-0.5 ${isSelected ? 'text-blue-100' : 'text-slate-400'}`}
                       >
