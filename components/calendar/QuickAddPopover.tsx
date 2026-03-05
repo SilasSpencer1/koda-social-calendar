@@ -61,7 +61,7 @@ export function QuickAddPopover({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseDateKey]);
 
-  // All time options (30-min intervals, 8am–10pm)
+  // All time options (15-min intervals)
   const allTimeOptions = useMemo(() => generateTimeOptions(), []);
 
   // End time options: only times strictly after selected start

@@ -79,6 +79,7 @@ export async function GET() {
     }
 
     // Fetch events for the full current week for all viewable friends
+    // Include attendees so we can check if current user is already an attendee
     const events = await prisma.event.findMany({
       where: {
         ownerId: { in: Array.from(friendMap.keys()) },
@@ -95,6 +96,14 @@ export async function GET() {
         locationName: true,
         ownerId: true,
         visibility: true,
+        coverMode: true,
+        attendees: {
+          select: {
+            userId: true,
+            status: true,
+            role: true,
+          },
+        },
       },
       orderBy: { startAt: 'asc' },
     });
@@ -115,15 +124,40 @@ export async function GET() {
           ...friend,
           detailLevel,
           eventCount: friendEvents.length,
-          events: friendEvents.map((e) => ({
-            id: e.id,
-            title: detailLevel === 'BUSY_ONLY' ? 'Busy' : e.title,
-            description: detailLevel === 'BUSY_ONLY' ? null : e.description,
-            startAt: e.startAt,
-            endAt: e.endAt,
-            locationName: detailLevel === 'BUSY_ONLY' ? null : e.locationName,
-            visibility: e.visibility,
-          })),
+          events: friendEvents.map((e) => {
+            // Check if the current user is an attendee of this event
+            const viewerAttendee = e.attendees?.find(
+              (a) => a.userId === userId
+            );
+            const isViewerAttendee = !!viewerAttendee;
+            const viewerStatus = viewerAttendee?.status ?? null;
+
+            // If user is an attendee (invited/going), show full details
+            // regardless of friend's detail level
+            const effectiveDetailLevel = isViewerAttendee
+              ? 'DETAILS'
+              : detailLevel;
+
+            // Respect event-level coverMode: BUSY_ONLY overrides everything
+            // except for attendees of the event
+            const shouldRedact =
+              !isViewerAttendee &&
+              (effectiveDetailLevel === 'BUSY_ONLY' ||
+                e.coverMode === 'BUSY_ONLY');
+
+            return {
+              id: e.id,
+              title: shouldRedact ? 'Busy' : e.title,
+              description: shouldRedact ? null : e.description,
+              startAt: e.startAt,
+              endAt: e.endAt,
+              locationName: shouldRedact ? null : e.locationName,
+              visibility: e.visibility,
+              // Include viewer's relationship to this event
+              isViewerAttendee,
+              viewerStatus,
+            };
+          }),
         };
       }
     );

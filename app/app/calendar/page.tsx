@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { CalendarGrid, AgendaList } from '@/components/calendar/CalendarGrid';
 import { QuickAddPopover } from '@/components/calendar/QuickAddPopover';
 import { EventEditorDialog } from '@/components/calendar/EventEditorDialog';
@@ -35,6 +35,7 @@ function getWeekStart(base: Date): Date {
 
 export default function CalendarPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // ── Calendar state ─────────────────────────────────────
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()));
@@ -65,6 +66,7 @@ export default function CalendarPage() {
     start?: Date;
     end?: Date;
     title?: string;
+    guestId?: string;
   }>({});
 
   // ── Find Time state ────────────────────────────────────
@@ -100,6 +102,44 @@ export default function CalendarPage() {
     }
     fetchUser();
   }, []);
+
+  // ── Handle URL params (createWith, edit, etc.) ─────────
+  useEffect(() => {
+    const createWith = searchParams.get('createWith');
+    const startParam = searchParams.get('start');
+    const endParam = searchParams.get('end');
+    const editId = searchParams.get('edit');
+
+    if (createWith && startParam && endParam) {
+      // Open event editor with friend pre-selected and time
+      setEditingEvent(null);
+      setEditorDefaults({
+        start: new Date(startParam),
+        end: new Date(endParam),
+        title: '',
+        guestId: createWith,
+      });
+      setEditorOpen(true);
+      // Clean URL params
+      router.replace('/app/calendar', { scroll: false });
+    } else if (editId) {
+      // Open editor for an existing event
+      (async () => {
+        try {
+          const res = await fetch(`/api/events/${editId}`);
+          if (res.ok) {
+            const eventData = await res.json();
+            setEditingEvent(eventData);
+            setEditorDefaults({});
+            setEditorOpen(true);
+          }
+        } catch {
+          // ignore
+        }
+      })();
+      router.replace('/app/calendar', { scroll: false });
+    }
+  }, [searchParams, router]);
 
   // ── Fetch events for current week ──────────────────────
   const fetchEvents = useCallback(async () => {
@@ -497,384 +537,363 @@ export default function CalendarPage() {
   // ── Render ─────────────────────────────────────────────
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-violet-50">
-      {/* Background decoration */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-200/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-violet-200/10 rounded-full blur-3xl" />
+    <div className="mx-auto max-w-7xl">
+      <div className="mb-8 flex items-start justify-between cal-fade-up">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Calendar</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            View and manage your events with friends
+          </p>
+        </div>
+        <button
+          onClick={openFindTime}
+          className="px-6 py-3 text-center bg-white hover:bg-slate-50 text-slate-900 font-semibold rounded-full border border-slate-200 shadow-md hover:shadow-lg transition-all duration-300"
+        >
+          Find Time
+        </button>
       </div>
 
-      {/* Page content */}
-      <div className="relative z-10 container max-w-7xl mx-auto px-4 py-12">
-        <div className="mb-8 flex items-start justify-between cal-fade-up">
-          <div>
-            <h1
-              className="text-4xl font-bold text-slate-900 mb-2"
-              style={{ fontFamily: 'var(--font-fraunces, inherit)' }}
-            >
-              Calendar
-            </h1>
-            <p className="text-slate-600">
-              View and manage your events with friends
-            </p>
+      {loading && (
+        <div className="flex items-center justify-center py-20">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-blue-500 cal-time-pulse" />
+            <span className="text-slate-600">Loading your calendar...</span>
           </div>
-          <button
-            onClick={openFindTime}
-            className="px-6 py-3 text-center bg-white hover:bg-slate-50 text-slate-900 font-semibold rounded-full border border-slate-200 shadow-md hover:shadow-lg transition-all duration-300"
-          >
-            Find Time
-          </button>
         </div>
+      )}
 
-        {loading && (
-          <div className="flex items-center justify-center py-20">
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-blue-500 cal-time-pulse" />
-              <span className="text-slate-600">Loading your calendar...</span>
-            </div>
-          </div>
-        )}
+      {error && (
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-700">
+          Error: {error}
+        </div>
+      )}
 
-        {error && (
-          <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-700">
-            Error: {error}
-          </div>
-        )}
+      {!loading && !error && (
+        <div className="space-y-8">
+          <CalendarGrid
+            events={events}
+            weekStart={weekStart}
+            currentUserId={currentUserId}
+            selectedSlot={
+              quickAdd
+                ? { start: quickAdd.startDate, end: quickAdd.endDate }
+                : null
+            }
+            onEventClick={(event, x, y) =>
+              handleEventClick(event as CalendarEvent, x, y)
+            }
+            onEmptyCellClick={handleEmptyCellClick}
+            onCreateClick={handleCreateClick}
+            onPrevWeek={goToPrevWeek}
+            onNextWeek={goToNextWeek}
+          />
 
-        {!loading && !error && (
-          <div className="space-y-8">
-            <CalendarGrid
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">
+              Upcoming Events
+            </h2>
+            <AgendaList
               events={events}
-              weekStart={weekStart}
               currentUserId={currentUserId}
-              selectedSlot={
-                quickAdd
-                  ? { start: quickAdd.startDate, end: quickAdd.endDate }
-                  : null
-              }
-              onEventClick={(event, x, y) =>
-                handleEventClick(event as CalendarEvent, x, y)
-              }
-              onEmptyCellClick={handleEmptyCellClick}
-              onCreateClick={handleCreateClick}
-              onPrevWeek={goToPrevWeek}
-              onNextWeek={goToNextWeek}
+              onEventClick={(e) => handleAgendaEventClick(e as CalendarEvent)}
             />
-
-            <div>
-              <h2
-                className="text-xl font-semibold text-slate-900 mb-4"
-                style={{ fontFamily: 'var(--font-fraunces, inherit)' }}
-              >
-                Upcoming Events
-              </h2>
-              <AgendaList
-                events={events}
-                currentUserId={currentUserId}
-                onEventClick={(e) => handleAgendaEventClick(e as CalendarEvent)}
-              />
-            </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* ── Quick Add Popover ────────────────────────── */}
-        {quickAdd && (
-          <QuickAddPopover
-            anchorX={quickAdd.anchorX}
-            anchorY={quickAdd.anchorY}
-            defaultStart={quickAdd.startDate}
-            defaultEnd={quickAdd.endDate}
-            onSave={handleQuickSave}
-            onMoreOptions={handleMoreOptions}
-            onClose={() => setQuickAdd(null)}
-            onTimeChange={handleTimeChange}
-          />
-        )}
-
-        {/* ── Event Details Popover ────────────────────── */}
-        {detailsPopover && (
-          <EventDetailsPopover
-            event={detailsPopover.event}
-            anchorX={detailsPopover.anchorX}
-            anchorY={detailsPopover.anchorY}
-            isOwner={detailsPopover.event.ownerId === currentUserId}
-            onEdit={handleEditFromDetails}
-            onDelete={handleDeleteFromDetails}
-            onClose={() => setDetailsPopover(null)}
-            onViewDetails={handleViewDetails}
-          />
-        )}
-
-        {/* ── Full Event Editor Dialog ─────────────────── */}
-        <EventEditorDialog
-          open={editorOpen}
-          onOpenChange={setEditorOpen}
-          event={editingEvent}
-          defaultStart={editorDefaults.start}
-          defaultEnd={editorDefaults.end}
-          defaultTitle={editorDefaults.title}
-          onSave={handleSave}
-          onDelete={deleteEvent}
+      {/* ── Quick Add Popover ────────────────────────── */}
+      {quickAdd && (
+        <QuickAddPopover
+          anchorX={quickAdd.anchorX}
+          anchorY={quickAdd.anchorY}
+          defaultStart={quickAdd.startDate}
+          defaultEnd={quickAdd.endDate}
+          onSave={handleQuickSave}
+          onMoreOptions={handleMoreOptions}
+          onClose={() => setQuickAdd(null)}
+          onTimeChange={handleTimeChange}
         />
+      )}
 
-        {/* ── Find Time Modal ──────────────────────────── */}
-        {showFindTime && (
+      {/* ── Event Details Popover ────────────────────── */}
+      {detailsPopover && (
+        <EventDetailsPopover
+          event={detailsPopover.event}
+          anchorX={detailsPopover.anchorX}
+          anchorY={detailsPopover.anchorY}
+          isOwner={detailsPopover.event.ownerId === currentUserId}
+          onEdit={handleEditFromDetails}
+          onDelete={handleDeleteFromDetails}
+          onClose={() => setDetailsPopover(null)}
+          onViewDetails={handleViewDetails}
+        />
+      )}
+
+      {/* ── Full Event Editor Dialog ─────────────────── */}
+      <EventEditorDialog
+        open={editorOpen}
+        onOpenChange={setEditorOpen}
+        event={editingEvent}
+        defaultStart={editorDefaults.start}
+        defaultEnd={editorDefaults.end}
+        defaultTitle={editorDefaults.title}
+        defaultGuestIds={
+          editorDefaults.guestId ? [editorDefaults.guestId] : undefined
+        }
+        onSave={handleSave}
+        onDelete={deleteEvent}
+      />
+
+      {/* ── Find Time Modal ──────────────────────────── */}
+      {showFindTime && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setShowFindTime(false)}
+        >
           <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setShowFindTime(false)}
+            className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto cal-slide-in"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div
-              className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto cal-slide-in"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex justify-between items-start mb-6">
-                <h2 className="text-2xl font-bold text-slate-900">Find Time</h2>
-                <button
-                  onClick={() => setShowFindTime(false)}
-                  className="text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  &#x2715;
-                </button>
+            <div className="flex justify-between items-start mb-6">
+              <h2 className="text-2xl font-bold text-slate-900">Find Time</h2>
+              <button
+                onClick={() => setShowFindTime(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                &#x2715;
+              </button>
+            </div>
+
+            {ftError && (
+              <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {ftError}
               </div>
+            )}
 
-              {ftError && (
-                <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-                  {ftError}
-                </div>
-              )}
-
-              {/* Step 1: Search */}
-              {ftStep === 'search' && (
-                <div className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      Select Friends
-                    </label>
-                    {friends.length === 0 ? (
-                      <p className="text-sm text-slate-500">
-                        No accepted friends yet.
-                      </p>
-                    ) : (
-                      <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {friends.map((f) => (
-                          <label
-                            key={f.user.id}
-                            className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedFriends.includes(f.user.id)}
-                              onChange={() => toggleFriend(f.user.id)}
-                              className="w-4 h-4 rounded"
-                            />
-                            <span className="text-sm text-slate-900">
-                              {f.user.name}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      Search Range
-                    </label>
-                    <select
-                      value={ftDays}
-                      onChange={(e) => setFtDays(Number(e.target.value))}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
-                    >
-                      <option value={3}>Next 3 days</option>
-                      <option value={7}>Next 7 days</option>
-                      <option value={14}>Next 14 days</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      Duration
-                    </label>
-                    <select
-                      value={ftDuration}
-                      onChange={(e) => setFtDuration(Number(e.target.value))}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
-                    >
-                      <option value={30}>30 minutes</option>
-                      <option value={60}>1 hour</option>
-                      <option value={90}>1.5 hours</option>
-                      <option value={120}>2 hours</option>
-                    </select>
-                  </div>
-
-                  <button
-                    onClick={handleFindSlots}
-                    disabled={ftLoading}
-                    className="w-full px-6 py-3 bg-gradient-to-r from-blue-500 to-violet-500 hover:from-blue-600 hover:to-violet-600 text-white font-semibold rounded-full shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50"
-                  >
-                    {ftLoading ? 'Finding slots...' : 'Find Slots'}
-                  </button>
-                </div>
-              )}
-
-              {/* Step 2: Results */}
-              {ftStep === 'results' && (
-                <div className="space-y-4">
-                  <button
-                    onClick={() => setFtStep('search')}
-                    className="text-sm text-blue-600 hover:text-blue-700 font-semibold"
-                  >
-                    &larr; Back to search
-                  </button>
-
-                  {ftSlots.length === 0 ? (
-                    <p className="text-slate-600 text-center py-8">
-                      No available slots found. Try a different range or
-                      duration.
+            {/* Step 1: Search */}
+            {ftStep === 'search' && (
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Select Friends
+                  </label>
+                  {friends.length === 0 ? (
+                    <p className="text-sm text-slate-500">
+                      No accepted friends yet.
                     </p>
                   ) : (
-                    <div className="space-y-2">
-                      <p className="text-sm text-slate-600 mb-3">
-                        {ftSlots.length} slot
-                        {ftSlots.length !== 1 ? 's' : ''} found:
-                      </p>
-                      {ftSlots.map((slot, i) => (
-                        <button
-                          key={i}
-                          onClick={() => handleSelectSlot(slot)}
-                          className="w-full text-left p-4 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all"
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {friends.map((f) => (
+                        <label
+                          key={f.user.id}
+                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 cursor-pointer"
                         >
-                          <p className="font-semibold text-slate-900">
-                            {new Date(slot.startAt).toLocaleDateString(
-                              'en-US',
-                              {
-                                weekday: 'short',
-                                month: 'short',
-                                day: 'numeric',
-                              }
-                            )}
-                          </p>
-                          <p className="text-sm text-slate-600">
-                            {new Date(slot.startAt).toLocaleTimeString(
-                              'en-US',
-                              {
-                                hour: 'numeric',
-                                minute: '2-digit',
-                                hour12: true,
-                              }
-                            )}{' '}
-                            &ndash;{' '}
-                            {new Date(slot.endAt).toLocaleTimeString('en-US', {
-                              hour: 'numeric',
-                              minute: '2-digit',
-                              hour12: true,
-                            })}
-                          </p>
-                        </button>
+                          <input
+                            type="checkbox"
+                            checked={selectedFriends.includes(f.user.id)}
+                            onChange={() => toggleFriend(f.user.id)}
+                            className="w-4 h-4 rounded"
+                          />
+                          <span className="text-sm text-slate-900">
+                            {f.user.name}
+                          </span>
+                        </label>
                       ))}
                     </div>
                   )}
                 </div>
-              )}
 
-              {/* Step 3: Confirm */}
-              {ftStep === 'confirm' && ftSelectedSlot && (
-                <div className="space-y-6">
-                  <button
-                    onClick={() => setFtStep('results')}
-                    className="text-sm text-blue-600 hover:text-blue-700 font-semibold"
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Search Range
+                  </label>
+                  <select
+                    value={ftDays}
+                    onChange={(e) => setFtDays(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
                   >
-                    &larr; Back to slots
-                  </button>
-
-                  <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-100">
-                    <p className="font-semibold text-slate-900">
-                      {new Date(ftSelectedSlot.startAt).toLocaleDateString(
-                        'en-US',
-                        {
-                          weekday: 'long',
-                          month: 'long',
-                          day: 'numeric',
-                        }
-                      )}
-                    </p>
-                    <p className="text-sm text-slate-600">
-                      {new Date(ftSelectedSlot.startAt).toLocaleTimeString(
-                        'en-US',
-                        {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          hour12: true,
-                        }
-                      )}{' '}
-                      &ndash;{' '}
-                      {new Date(ftSelectedSlot.endAt).toLocaleTimeString(
-                        'en-US',
-                        {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          hour12: true,
-                        }
-                      )}
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      Event Title *
-                    </label>
-                    <input
-                      type="text"
-                      value={ftTitle}
-                      onChange={(e) => setFtTitle(e.target.value)}
-                      placeholder="e.g. Team lunch"
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      Location (optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={ftLocation}
-                      onChange={(e) => setFtLocation(e.target.value)}
-                      placeholder="e.g. Cafe on Main St"
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      Visibility
-                    </label>
-                    <select
-                      value={ftVisibility}
-                      onChange={(e) => setFtVisibility(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
-                    >
-                      <option value="PRIVATE">Private</option>
-                      <option value="FRIENDS">Friends</option>
-                      <option value="PUBLIC">Public</option>
-                    </select>
-                  </div>
-
-                  <button
-                    onClick={handleConfirmSlot}
-                    disabled={!ftTitle.trim() || ftConfirmLoading}
-                    className="w-full px-6 py-3 bg-gradient-to-r from-blue-500 to-violet-500 hover:from-blue-600 hover:to-violet-600 text-white font-semibold rounded-full shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50"
-                  >
-                    {ftConfirmLoading
-                      ? 'Creating event...'
-                      : 'Create Event & Send Invites'}
-                  </button>
+                    <option value={3}>Next 3 days</option>
+                    <option value={7}>Next 7 days</option>
+                    <option value={14}>Next 14 days</option>
+                  </select>
                 </div>
-              )}
-            </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Duration
+                  </label>
+                  <select
+                    value={ftDuration}
+                    onChange={(e) => setFtDuration(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
+                  >
+                    <option value={30}>30 minutes</option>
+                    <option value={60}>1 hour</option>
+                    <option value={90}>1.5 hours</option>
+                    <option value={120}>2 hours</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={handleFindSlots}
+                  disabled={ftLoading}
+                  className="w-full px-6 py-3 bg-gradient-to-r from-blue-500 to-violet-500 hover:from-blue-600 hover:to-violet-600 text-white font-semibold rounded-full shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50"
+                >
+                  {ftLoading ? 'Finding slots...' : 'Find Slots'}
+                </button>
+              </div>
+            )}
+
+            {/* Step 2: Results */}
+            {ftStep === 'results' && (
+              <div className="space-y-4">
+                <button
+                  onClick={() => setFtStep('search')}
+                  className="text-sm text-blue-600 hover:text-blue-700 font-semibold"
+                >
+                  &larr; Back to search
+                </button>
+
+                {ftSlots.length === 0 ? (
+                  <p className="text-slate-600 text-center py-8">
+                    No available slots found. Try a different range or duration.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm text-slate-600 mb-3">
+                      {ftSlots.length} slot
+                      {ftSlots.length !== 1 ? 's' : ''} found:
+                    </p>
+                    {ftSlots.map((slot, i) => (
+                      <button
+                        key={i}
+                        onClick={() => handleSelectSlot(slot)}
+                        className="w-full text-left p-4 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all"
+                      >
+                        <p className="font-semibold text-slate-900">
+                          {new Date(slot.startAt).toLocaleDateString('en-US', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </p>
+                        <p className="text-sm text-slate-600">
+                          {new Date(slot.startAt).toLocaleTimeString('en-US', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: true,
+                          })}{' '}
+                          &ndash;{' '}
+                          {new Date(slot.endAt).toLocaleTimeString('en-US', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: true,
+                          })}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Step 3: Confirm */}
+            {ftStep === 'confirm' && ftSelectedSlot && (
+              <div className="space-y-6">
+                <button
+                  onClick={() => setFtStep('results')}
+                  className="text-sm text-blue-600 hover:text-blue-700 font-semibold"
+                >
+                  &larr; Back to slots
+                </button>
+
+                <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-100">
+                  <p className="font-semibold text-slate-900">
+                    {new Date(ftSelectedSlot.startAt).toLocaleDateString(
+                      'en-US',
+                      {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric',
+                      }
+                    )}
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    {new Date(ftSelectedSlot.startAt).toLocaleTimeString(
+                      'en-US',
+                      {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                      }
+                    )}{' '}
+                    &ndash;{' '}
+                    {new Date(ftSelectedSlot.endAt).toLocaleTimeString(
+                      'en-US',
+                      {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                      }
+                    )}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Event Title *
+                  </label>
+                  <input
+                    type="text"
+                    value={ftTitle}
+                    onChange={(e) => setFtTitle(e.target.value)}
+                    placeholder="e.g. Team lunch"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Location (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={ftLocation}
+                    onChange={(e) => setFtLocation(e.target.value)}
+                    placeholder="e.g. Cafe on Main St"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Visibility
+                  </label>
+                  <select
+                    value={ftVisibility}
+                    onChange={(e) => setFtVisibility(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
+                  >
+                    <option value="PRIVATE">Private</option>
+                    <option value="FRIENDS">Friends</option>
+                    <option value="PUBLIC">Public</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={handleConfirmSlot}
+                  disabled={!ftTitle.trim() || ftConfirmLoading}
+                  className="w-full px-6 py-3 bg-gradient-to-r from-blue-500 to-violet-500 hover:from-blue-600 hover:to-violet-600 text-white font-semibold rounded-full shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50"
+                >
+                  {ftConfirmLoading
+                    ? 'Creating event...'
+                    : 'Create Event & Send Invites'}
+                </button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-    </main>
+        </div>
+      )}
+    </div>
   );
 }

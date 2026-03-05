@@ -49,6 +49,8 @@ interface EventEditorDialogProps {
   defaultStart?: Date;
   defaultEnd?: Date;
   defaultTitle?: string;
+  /** Pre-fill guest IDs (e.g. when creating from feed) */
+  defaultGuestIds?: string[];
   /** Callbacks */
   onSave: (
     data: EventFormData,
@@ -66,6 +68,7 @@ export function EventEditorDialog({
   defaultStart,
   defaultEnd,
   defaultTitle,
+  defaultGuestIds,
   onSave,
   onDelete,
 }: EventEditorDialogProps) {
@@ -124,11 +127,11 @@ export function EventEditorDialog({
       setVisibility('FRIENDS');
       setCoverMode('NONE');
       setSyncToGoogle(false);
-      setGuestIds([]);
+      setGuestIds(defaultGuestIds || []);
     }
     setErrors({});
     setConfirmDelete(false);
-  }, [event, defaultStart, defaultEnd, defaultTitle]);
+  }, [event, defaultStart, defaultEnd, defaultTitle, defaultGuestIds]);
 
   useEffect(() => {
     if (open) resetForm();
