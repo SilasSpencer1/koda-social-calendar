@@ -1,8 +1,21 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
+import {
+  ArrowLeft,
+  Clock,
+  MapPin,
+  Users,
+  Eye,
+  Shield,
+  Pencil,
+  Trash2,
+  Link2,
+  CheckCircle2,
+  XCircle,
+  UserCheck,
+} from 'lucide-react';
 
 interface Attendee {
   id: string;
@@ -43,6 +56,7 @@ export default function EventDetailPage() {
   const [rsvpStatus, setRsvpStatus] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   useEffect(() => {
     async function fetchEvent() {
@@ -57,18 +71,17 @@ export default function EventDetailPage() {
         const data = await response.json();
         setEvent(data);
 
-        // Get current user from session
         const sessionResponse = await fetch('/api/auth/session');
         if (sessionResponse.ok) {
           const session = await sessionResponse.json();
           setCurrentUserId(session.user?.id);
 
-          // Find current user's attendance
           const attendee = data.attendees.find(
             (a: Attendee) => a.userId === session.user?.id
           );
           if (attendee) {
             setRsvpStatus(attendee.status);
+            setIsAnonymous(attendee.anonymity === 'ANONYMOUS');
           }
         }
       } catch (err) {
@@ -89,12 +102,9 @@ export default function EventDetailPage() {
         body: JSON.stringify({ status }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to update RSVP');
-      }
+      if (!response.ok) throw new Error('Failed to update RSVP');
 
       setRsvpStatus(status);
-      // Refresh event data
       const eventResponse = await fetch(`/api/events/${eventId}`);
       if (eventResponse.ok) {
         const data = await eventResponse.json();
@@ -115,12 +125,9 @@ export default function EventDetailPage() {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to update anonymity');
-      }
+      if (!response.ok) throw new Error('Failed to update anonymity');
 
       setIsAnonymous(anonymous);
-      // Refresh event data
       const eventResponse = await fetch(`/api/events/${eventId}`);
       if (eventResponse.ok) {
         const data = await eventResponse.json();
@@ -131,197 +138,321 @@ export default function EventDetailPage() {
     }
   };
 
+  const handleCopyLink = () => {
+    const url = `${window.location.origin}/app/public/events/${event?.id}`;
+    navigator.clipboard.writeText(url);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+  };
+
   if (loading) {
     return (
-      <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-violet-50">
-        <div className="container max-w-4xl mx-auto px-4 py-12">
-          <div className="flex items-center justify-center py-20">
-            <div className="text-slate-600">Loading event...</div>
+      <div className="mx-auto max-w-3xl">
+        <div className="flex items-center justify-center py-20">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+            <span className="text-slate-500">Loading event...</span>
           </div>
         </div>
-      </main>
+      </div>
     );
   }
 
   if (error || !event) {
     return (
-      <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-violet-50">
-        <div className="container max-w-4xl mx-auto px-4 py-12">
-          <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-700">
+      <div className="mx-auto max-w-3xl">
+        <div className="glass-panel rounded-2xl p-6 text-center">
+          <p className="text-red-600 font-medium mb-4">
             {error || 'Event not found'}
-          </div>
-          <Link
-            href="/app/calendar"
-            className="mt-4 inline-block px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg"
+          </p>
+          <button
+            onClick={() => router.back()}
+            className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700"
           >
-            Back to Calendar
-          </Link>
+            Go back
+          </button>
         </div>
-      </main>
+      </div>
     );
   }
 
   const isOwner = currentUserId === event.ownerId;
   const isAttendee = event.attendees.some((a) => a.userId === currentUserId);
+  const startTime = new Date(event.startAt);
+  const endTime = new Date(event.endAt);
+
+  const goingCount = event.attendees.filter((a) => a.status === 'GOING').length;
+  const invitedCount = event.attendees.filter(
+    (a) => a.status === 'INVITED'
+  ).length;
+
+  const visibilityConfig: Record<
+    string,
+    { label: string; icon: React.ReactNode; className: string }
+  > = {
+    PRIVATE: {
+      label: 'Private',
+      icon: <Shield className="size-3.5" />,
+      className: 'bg-orange-50 text-orange-700 border-orange-200/50',
+    },
+    FRIENDS: {
+      label: 'Friends',
+      icon: <Users className="size-3.5" />,
+      className: 'bg-blue-50 text-blue-700 border-blue-200/50',
+    },
+    PUBLIC: {
+      label: 'Public',
+      icon: <Eye className="size-3.5" />,
+      className: 'bg-green-50 text-green-700 border-green-200/50',
+    },
+  };
+
+  const vis = visibilityConfig[event.visibility] || visibilityConfig.FRIENDS;
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-violet-50">
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-200/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-violet-200/10 rounded-full blur-3xl" />
-      </div>
+    <div className="mx-auto max-w-3xl">
+      {/* Back button */}
+      <button
+        onClick={() => router.back()}
+        className="inline-flex items-center gap-1.5 mb-6 text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors"
+      >
+        <ArrowLeft className="size-4" />
+        Back
+      </button>
 
-      <div className="relative z-10 container max-w-4xl mx-auto px-4 py-12">
-        <Link
-          href="/app/calendar"
-          className="inline-block mb-6 text-blue-600 hover:text-blue-700 font-semibold"
-        >
-          ← Back to Calendar
-        </Link>
+      {/* Main card */}
+      <div className="glass-panel rounded-3xl overflow-hidden">
+        {/* Accent header bar */}
+        <div
+          className="h-2"
+          style={{
+            background: 'linear-gradient(90deg, #3b82f6, #8b5cf6, #3b82f6)',
+            backgroundSize: '200% 100%',
+          }}
+        />
 
-        <div className="bg-white/70 backdrop-blur-md rounded-3xl border border-white/30 p-8 shadow-xl">
-          {/* Event header */}
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold text-slate-900 mb-2">
-              {event.title}
-            </h1>
-            <p className="text-slate-600 text-lg">
-              {new Date(event.startAt).toLocaleString('en-US', {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit',
-                hour12: true,
-              })}{' '}
-              -{' '}
-              {new Date(event.endAt).toLocaleTimeString('en-US', {
-                hour: 'numeric',
-                minute: '2-digit',
-                hour12: true,
-              })}
-            </p>
+        <div className="p-8">
+          {/* Title + badges */}
+          <div className="mb-6">
+            <div className="flex items-start justify-between gap-4 mb-3">
+              <h1
+                className="text-3xl font-bold text-slate-900 leading-tight"
+                style={{ fontFamily: 'var(--font-fraunces, serif)' }}
+              >
+                {event.title}
+              </h1>
+              <span
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${vis.className}`}
+              >
+                {vis.icon}
+                {vis.label}
+              </span>
+            </div>
 
-            {event.locationName && (
-              <p className="text-slate-600 mt-2">{event.locationName}</p>
-            )}
-            {event.description && (
-              <p className="text-slate-700 mt-4">{event.description}</p>
+            {event.coverMode === 'BUSY_ONLY' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200/50">
+                <Shield className="size-3" />
+                Shows as Busy to others
+              </span>
             )}
           </div>
 
-          {/* Host info */}
-          <div className="mb-8 p-4 rounded-xl bg-blue-50/50 border border-blue-100">
-            <p className="text-sm text-slate-600">
-              Hosted by{' '}
-              <span className="font-semibold text-slate-900">
+          {/* Event details grid */}
+          <div className="grid gap-4 mb-8">
+            {/* Date & Time */}
+            <div className="flex items-start gap-3 p-4 rounded-2xl bg-slate-50/80 border border-slate-100">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                <Clock className="size-5 text-blue-500" />
+              </div>
+              <div>
+                <p className="font-semibold text-slate-800">
+                  {startTime.toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}
+                </p>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  {startTime.toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  })}
+                  {' \u2013 '}
+                  {endTime.toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  })}
+                </p>
+              </div>
+            </div>
+
+            {/* Location */}
+            {event.locationName && (
+              <div className="flex items-start gap-3 p-4 rounded-2xl bg-slate-50/80 border border-slate-100">
+                <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center shrink-0">
+                  <MapPin className="size-5 text-violet-500" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-800">
+                    {event.locationName}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Description */}
+            {event.description && (
+              <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-100">
+                <p className="text-slate-600 leading-relaxed whitespace-pre-wrap">
+                  {event.description}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Host card */}
+          <div className="mb-8 flex items-center gap-3 p-4 rounded-2xl bg-blue-50/60 border border-blue-100/80">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-sm font-bold text-white">
+              {event.owner.name?.charAt(0)?.toUpperCase() || '?'}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-800">
                 {event.owner.name}
-              </span>
-            </p>
+              </p>
+              <p className="text-xs text-slate-500">Host</p>
+            </div>
           </div>
 
           {/* RSVP section */}
           {!isOwner && isAttendee && (
-            <div className="mb-8 p-6 rounded-2xl bg-gradient-to-r from-blue-50 to-violet-50 border border-white/50">
+            <div className="mb-8 p-6 rounded-2xl glass-card">
               <h2 className="text-lg font-semibold text-slate-900 mb-4">
                 Your Response
               </h2>
-              <div className="flex gap-3 mb-6">
+              <div className="flex gap-3 mb-4">
                 <button
                   onClick={() => handleRSVP('GOING')}
-                  className={`flex-1 px-4 py-3 rounded-lg font-semibold transition-all ${
+                  className={`flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold transition-all ${
                     rsvpStatus === 'GOING'
-                      ? 'bg-green-500 hover:bg-green-600 text-white'
-                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                      ? 'bg-green-500 text-white shadow-md shadow-green-500/25'
+                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-green-50 hover:border-green-200 hover:text-green-700'
                   }`}
                 >
+                  <CheckCircle2 className="size-4" />
                   Going
                 </button>
                 <button
                   onClick={() => handleRSVP('DECLINED')}
-                  className={`flex-1 px-4 py-3 rounded-lg font-semibold transition-all ${
+                  className={`flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold transition-all ${
                     rsvpStatus === 'DECLINED'
-                      ? 'bg-red-500 hover:bg-red-600 text-white'
-                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                      ? 'bg-red-500 text-white shadow-md shadow-red-500/25'
+                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-red-50 hover:border-red-200 hover:text-red-700'
                   }`}
                 >
+                  <XCircle className="size-4" />
                   Decline
                 </button>
               </div>
 
-              {/* Anonymity toggle */}
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isAnonymous}
-                    onChange={(e) => handleAnonymityToggle(e.target.checked)}
-                    className="w-5 h-5 rounded"
-                  />
-                  <span className="text-sm text-slate-700">
-                    Attend anonymously (host cannot see your name)
-                  </span>
-                </label>
-              </div>
+              <label className="flex items-center gap-2.5 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={isAnonymous}
+                  onChange={(e) => handleAnonymityToggle(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-slate-600 group-hover:text-slate-800 transition-colors">
+                  Attend anonymously
+                </span>
+              </label>
             </div>
           )}
 
-          {/* Attendees list */}
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900 mb-4">
-              Attendees ({event.attendees.length})
-            </h2>
+          {/* Attendees */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-slate-900">
+                Attendees
+              </h2>
+              <div className="flex items-center gap-3 text-xs text-slate-500">
+                {goingCount > 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    <UserCheck className="size-3.5 text-green-500" />
+                    {goingCount} going
+                  </span>
+                )}
+                {invitedCount > 0 && <span>{invitedCount} pending</span>}
+              </div>
+            </div>
             <div className="space-y-2">
               {event.attendees.map((attendee) => (
                 <div
                   key={attendee.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100"
+                  className="flex items-center justify-between p-3 rounded-xl bg-slate-50/80 border border-slate-100"
                 >
-                  <div className="flex-1">
-                    <p className="font-medium text-slate-900">
-                      {attendee.name}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {attendee.status === 'GOING' && 'Going'}
-                      {attendee.status === 'DECLINED' && 'Declined'}
-                      {attendee.status === 'INVITED' && '? Invited'}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center text-xs font-bold text-slate-600">
+                      {attendee.name?.charAt(0)?.toUpperCase() || '?'}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">
+                        {attendee.name}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {attendee.status === 'GOING' && 'Going'}
+                        {attendee.status === 'DECLINED' && 'Declined'}
+                        {attendee.status === 'INVITED' && 'Invited'}
+                      </p>
+                    </div>
                   </div>
-                  {attendee.role === 'HOST' && (
-                    <span className="px-2 py-1 text-xs font-semibold bg-blue-100 text-blue-700 rounded-full">
-                      Host
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {attendee.role === 'HOST' && (
+                      <span className="px-2.5 py-1 text-[10px] font-semibold bg-blue-50 text-blue-600 rounded-full border border-blue-100">
+                        Host
+                      </span>
+                    )}
+                    {attendee.status === 'GOING' && (
+                      <CheckCircle2 className="size-4 text-green-500" />
+                    )}
+                    {attendee.status === 'DECLINED' && (
+                      <XCircle className="size-4 text-red-400" />
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Public event link */}
+          {/* Public event share */}
           {event.visibility === 'PUBLIC' && (
-            <div className="mt-6 p-4 rounded-xl bg-green-50/50 border border-green-100">
-              <p className="text-sm text-slate-600 mb-2">
-                This is a{' '}
-                <span className="font-semibold text-green-700">
-                  public event
-                </span>
-                . Share the link:
-              </p>
-              <Link
-                href={`/app/public/events/${event.id}`}
-                className="text-blue-600 hover:text-blue-700 font-semibold text-sm break-all"
-              >
-                {typeof window !== 'undefined' ? window.location.origin : ''}
-                /app/public/events/{event.id}
-              </Link>
+            <div className="mb-8 p-4 rounded-2xl bg-green-50/60 border border-green-100/80">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-green-800">
+                    Public Event
+                  </p>
+                  <p className="text-xs text-green-600 mt-0.5">
+                    Share the link with anyone
+                  </p>
+                </div>
+                <button
+                  onClick={handleCopyLink}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-green-200 text-green-700 hover:bg-green-50 transition-colors"
+                >
+                  <Link2 className="size-3.5" />
+                  {linkCopied ? 'Copied!' : 'Copy Link'}
+                </button>
+              </div>
             </div>
           )}
 
           {/* Owner actions */}
           {isOwner && (
-            <div className="mt-8 pt-8 border-t border-slate-200">
-              {/* Visibility toggle */}
-              <div className="mb-6">
+            <div className="pt-6 border-t border-slate-100">
+              <div className="mb-5">
                 <label className="block text-sm font-semibold text-slate-700 mb-2">
                   Event Visibility
                 </label>
@@ -330,7 +461,6 @@ export default function EventDetailPage() {
                   onChange={async (e) => {
                     const newVisibility = e.target.value;
                     const previousVisibility = event.visibility;
-                    // Optimistic update
                     setEvent((prev) =>
                       prev ? { ...prev, visibility: newVisibility } : prev
                     );
@@ -340,20 +470,17 @@ export default function EventDetailPage() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ visibility: newVisibility }),
                       });
-                      if (!res.ok) {
-                        throw new Error('Failed to update visibility');
-                      }
+                      if (!res.ok) throw new Error();
                     } catch {
-                      // Revert on failure
                       setEvent((prev) =>
                         prev
                           ? { ...prev, visibility: previousVisibility }
                           : prev
                       );
-                      setError('Failed to update event visibility');
+                      setError('Failed to update visibility');
                     }
                   }}
-                  className="px-3 py-2 rounded-lg border border-slate-200 text-sm"
+                  className="px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white"
                 >
                   <option value="PRIVATE">Private</option>
                   <option value="FRIENDS">Friends</option>
@@ -362,12 +489,19 @@ export default function EventDetailPage() {
               </div>
 
               <div className="flex gap-3">
-                <Link
-                  href={`/app/events/${event.id}/edit`}
-                  className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg transition-colors"
+                <button
+                  onClick={() => {
+                    router.push(`/app/calendar?edit=${event.id}`);
+                  }}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02]"
+                  style={{
+                    background: 'linear-gradient(135deg, #3b82f6, #6366f1)',
+                    boxShadow: '0 4px 12px rgba(59,130,246,0.25)',
+                  }}
                 >
+                  <Pencil className="size-4" />
                   Edit
-                </Link>
+                </button>
                 <button
                   onClick={() => {
                     if (
@@ -378,8 +512,9 @@ export default function EventDetailPage() {
                       }).then(() => router.push('/app/calendar'));
                     }
                   }}
-                  className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-colors"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-white border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
                 >
+                  <Trash2 className="size-4" />
                   Delete
                 </button>
               </div>
@@ -387,6 +522,6 @@ export default function EventDetailPage() {
           )}
         </div>
       </div>
-    </main>
+    </div>
   );
 }

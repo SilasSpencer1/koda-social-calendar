@@ -6,9 +6,10 @@
 
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { MapPin, Clock, X } from 'lucide-react';
 import {
+  TOTAL_MINUTES,
   HOURS,
   DAYS,
   getEventPosition,
@@ -27,6 +28,10 @@ export interface MiniEvent {
   description?: string | null;
   locationName?: string | null;
   visibility?: string;
+  /** Whether the current viewer is already an attendee of this event */
+  isViewerAttendee?: boolean;
+  /** The viewer's attendance status if they are an attendee */
+  viewerStatus?: string | null;
 }
 
 interface MiniWeekCalendarProps {
@@ -34,6 +39,8 @@ interface MiniWeekCalendarProps {
   weekStart: Date;
   /** Called when user clicks "Request to Join" on an event */
   onRequestJoin?: (eventId: string) => void;
+  /** Called when user clicks an empty cell to create an event */
+  onEmptyCellClick?: (startDate: Date, endDate: Date) => void;
 }
 
 // ── Constants (component-specific) ───────────────────────────
@@ -112,6 +119,8 @@ function EventPopover({
   }, []);
 
   const isPublic = event.visibility === 'PUBLIC';
+  const isViewerAttendee = event.isViewerAttendee ?? false;
+  const viewerStatus = event.viewerStatus ?? null;
 
   return (
     <div
@@ -157,8 +166,8 @@ function EventPopover({
           </p>
         )}
 
-        {/* Visibility badge */}
-        <div className="mb-3">
+        {/* Visibility badge + attendee status */}
+        <div className="mb-3 flex items-center gap-2">
           <span
             className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
               isPublic
@@ -168,10 +177,27 @@ function EventPopover({
           >
             {isPublic ? 'Public Event' : 'Friends Only'}
           </span>
+          {isViewerAttendee && (
+            <span
+              className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                viewerStatus === 'GOING'
+                  ? 'bg-green-100 text-green-700'
+                  : viewerStatus === 'DECLINED'
+                    ? 'bg-red-100 text-red-600'
+                    : 'bg-amber-100 text-amber-700'
+              }`}
+            >
+              {viewerStatus === 'GOING'
+                ? "You're going"
+                : viewerStatus === 'DECLINED'
+                  ? 'Declined'
+                  : 'Invited'}
+            </span>
+          )}
         </div>
 
-        {/* Request to join */}
-        {onRequestJoin && (
+        {/* Only show Request to Join if user is NOT already an attendee */}
+        {onRequestJoin && !isViewerAttendee && (
           <button
             onClick={() => onRequestJoin(event.id)}
             disabled={requesting}
@@ -191,6 +217,7 @@ export function MiniWeekCalendar({
   events,
   weekStart,
   onRequestJoin,
+  onEmptyCellClick,
 }: MiniWeekCalendarProps) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -204,6 +231,30 @@ export function MiniWeekCalendar({
   const [selectedEvent, setSelectedEvent] = useState<MiniEvent | null>(null);
   const [popoverPos, setPopoverPos] = useState({ x: 0, y: 0 });
   const [requesting, setRequesting] = useState(false);
+
+  const handleDayColumnClick = useCallback(
+    (dayIdx: number, e: React.MouseEvent<HTMLDivElement>) => {
+      if (!onEmptyCellClick) return;
+      const target = e.target as HTMLElement;
+      // Don't trigger on event block clicks
+      if (target.closest('[data-mini-event]')) return;
+
+      const rect = e.currentTarget.getBoundingClientRect();
+      const relativeY = e.clientY - rect.top;
+      const minutesFromStart = (relativeY / rect.height) * TOTAL_MINUTES;
+      const roundedMinutes = Math.floor(minutesFromStart / 15) * 15;
+      const hour = Math.floor(roundedMinutes / 60);
+      const minute = roundedMinutes % 60;
+
+      const clickDate = new Date(weekStart);
+      clickDate.setDate(weekStart.getDate() + dayIdx);
+      clickDate.setHours(hour, minute, 0, 0);
+
+      const endDate = new Date(clickDate.getTime() + 60 * 60 * 1000);
+      onEmptyCellClick(clickDate, endDate);
+    },
+    [onEmptyCellClick, weekStart]
+  );
 
   const handleEventClick = (event: MiniEvent, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -316,8 +367,9 @@ export function MiniWeekCalendar({
                 key={day}
                 className={`relative rounded-md ${
                   isToday ? 'bg-blue-50/60' : 'bg-gray-50/40'
-                }`}
+                } ${onEmptyCellClick ? 'cursor-pointer hover:bg-blue-50/40' : ''}`}
                 style={{ height: gridHeight }}
+                onClick={(e) => handleDayColumnClick(dayIdx, e)}
               >
                 {/* Hour grid lines */}
                 {HOURS.map((hour, i) => (
@@ -340,6 +392,7 @@ export function MiniWeekCalendar({
                   return (
                     <div
                       key={event.id}
+                      data-mini-event
                       className="absolute left-0.5 right-0.5 cursor-pointer"
                       style={{
                         top: `${topPercent}%`,

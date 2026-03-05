@@ -38,6 +38,7 @@ describe('Friendship Policies - Core Functions', () => {
         avatarUrl: null,
         city: null,
         passwordHash: null,
+        hasCompletedOnboarding: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -63,6 +64,7 @@ describe('Friendship Policies - Core Functions', () => {
         avatarUrl: 'https://example.com/avatar.png',
         city: null,
         passwordHash: 'hashed',
+        hasCompletedOnboarding: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };

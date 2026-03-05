@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Calendar, Users, MapPin, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MiniWeekCalendar } from '@/components/calendar/MiniWeekCalendar';
@@ -41,6 +42,7 @@ function getLocalWeekStart(): Date {
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [friends, setFriends] = useState<FeedFriend[]>([]);
   // Compute weekStart in the user's local timezone to avoid UTC-offset day shift
   const [weekStart] = useState<Date>(() => getLocalWeekStart());
@@ -62,6 +64,19 @@ export default function DashboardPage() {
   useEffect(() => {
     loadFeed();
   }, [loadFeed]);
+
+  const handleCreateWithFriend = useCallback(
+    (friendId: string, startDate: Date, endDate: Date) => {
+      // Navigate to calendar with pre-filled params for creating event with this friend
+      const params = new URLSearchParams({
+        createWith: friendId,
+        start: startDate.toISOString(),
+        end: endDate.toISOString(),
+      });
+      router.push(`/app/calendar?${params.toString()}`);
+    },
+    [router]
+  );
 
   const handleRequestJoin = useCallback(async (eventId: string) => {
     try {
@@ -193,6 +208,9 @@ export default function DashboardPage() {
                   events={friend.events}
                   weekStart={weekStart}
                   onRequestJoin={handleRequestJoin}
+                  onEmptyCellClick={(start, end) =>
+                    handleCreateWithFriend(friend.id, start, end)
+                  }
                 />
               </div>
 

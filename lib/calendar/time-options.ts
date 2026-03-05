@@ -21,8 +21,8 @@ export interface TimeOption {
 // ── Generators ───────────────────────────────────────────────
 
 /**
- * Generate time options at 30-minute intervals.
- * Default range: GRID_START_HOUR (8) through GRID_END_HOUR (22).
+ * Generate time options at 15-minute intervals.
+ * Default range: GRID_START_HOUR (0) through GRID_END_HOUR (24).
  */
 export function generateTimeOptions(
   startHour: number = GRID_START_HOUR,
@@ -31,7 +31,7 @@ export function generateTimeOptions(
   const options: TimeOption[] = [];
 
   for (let h = startHour; h <= endHour; h++) {
-    for (let m = 0; m < 60; m += 30) {
+    for (let m = 0; m < 60; m += 15) {
       if (h === endHour && m > 0) break;
 
       const totalMinutes = h * 60 + m;
@@ -52,11 +52,11 @@ export function generateTimeOptions(
 
 /**
  * Extract an "HH:mm" time-value string from a Date,
- * snapped down to the nearest 30-minute boundary.
+ * snapped down to the nearest 15-minute boundary.
  */
 export function dateToTimeValue(date: Date): string {
   const h = date.getHours();
-  const m = Math.floor(date.getMinutes() / 30) * 30;
+  const m = Math.floor(date.getMinutes() / 15) * 15;
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 }
 

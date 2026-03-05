@@ -71,6 +71,13 @@ interface CalendarGridProps {
   onNextWeek?: () => void;
 }
 
+// ── Drag state type ─────────────────────────────────────────
+interface DragState {
+  dayIdx: number;
+  startMinutes: number;
+  currentMinutes: number;
+}
+
 // ── Event color palettes (cool-toned for glass theme) ────────
 
 const EVENT_PALETTES = [
@@ -211,6 +218,8 @@ export function CalendarGrid({
 
   const gridRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  const dragRef = useRef<DragState | null>(null);
 
   // Auto-scroll to default hour (8am) on mount
   useEffect(() => {
@@ -221,30 +230,106 @@ export function CalendarGrid({
     }
   }, []);
 
-  const handleDayColumnClick = useCallback(
+  // Convert mouse Y position to minutes from grid start (snapped to 15 min)
+  const yToMinutes = useCallback(
+    (clientY: number, columnEl: HTMLDivElement) => {
+      const rect = columnEl.getBoundingClientRect();
+      const relativeY = clientY - rect.top;
+      const minutesFromStart = (relativeY / rect.height) * TOTAL_MINUTES;
+      return Math.max(
+        0,
+        Math.min(TOTAL_MINUTES - 15, Math.floor(minutesFromStart / 15) * 15)
+      );
+    },
+    []
+  );
+
+  // Handle drag start on empty cell
+  const handleDayMouseDown = useCallback(
     (dayIdx: number, e: React.MouseEvent<HTMLDivElement>) => {
       if (!onEmptyCellClick) return;
       const target = e.target as HTMLElement;
       if (target.closest('[data-event-block]')) return;
 
-      const rect = e.currentTarget.getBoundingClientRect();
-      const relativeY = e.clientY - rect.top;
-      const totalHeight = rect.height;
+      const minutes = yToMinutes(e.clientY, e.currentTarget);
+      const state: DragState = {
+        dayIdx,
+        startMinutes: minutes,
+        currentMinutes: minutes + 15,
+      };
+      dragRef.current = state;
+      setDragState(state);
+    },
+    [onEmptyCellClick, yToMinutes]
+  );
 
-      const minutesFromStart = (relativeY / totalHeight) * TOTAL_MINUTES;
-      const roundedMinutes = Math.floor(minutesFromStart / 30) * 30;
-      const hour = Math.floor(roundedMinutes / 60) + GRID_START_HOUR;
-      const minute = roundedMinutes % 60;
+  // Handle drag move (attached to the scroll container for smooth tracking)
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dragRef.current || !scrollRef.current) return;
+      const dayIdx = dragRef.current.dayIdx;
+      // Find the day column element
+      const columns =
+        scrollRef.current.querySelectorAll<HTMLDivElement>('[data-day-column]');
+      const col = columns[dayIdx];
+      if (!col) return;
+
+      const rect = col.getBoundingClientRect();
+      const relativeY = e.clientY - rect.top;
+      const minutesFromStart = (relativeY / rect.height) * TOTAL_MINUTES;
+      const snapped = Math.max(
+        0,
+        Math.min(TOTAL_MINUTES, Math.round(minutesFromStart / 15) * 15)
+      );
+
+      const updated = { ...dragRef.current, currentMinutes: snapped };
+      dragRef.current = updated;
+      setDragState(updated);
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      if (!dragRef.current || !onEmptyCellClick) {
+        dragRef.current = null;
+        setDragState(null);
+        return;
+      }
+
+      const { dayIdx, startMinutes, currentMinutes } = dragRef.current;
+      const minMin = Math.min(startMinutes, currentMinutes);
+      const maxMin = Math.max(startMinutes, currentMinutes);
+      const duration = maxMin - minMin;
+
+      // If barely dragged (< 15 min movement), treat as a click with 1hr default
+      const effectiveStart = minMin;
+      const effectiveEnd = duration < 15 ? minMin + 60 : maxMin;
+
+      const startHour = Math.floor(effectiveStart / 60) + GRID_START_HOUR;
+      const startMinute = effectiveStart % 60;
 
       const clickDate = new Date(weekStart);
       clickDate.setDate(weekStart.getDate() + dayIdx);
-      clickDate.setHours(hour, minute, 0, 0);
+      clickDate.setHours(startHour, startMinute, 0, 0);
 
-      const endDate = new Date(clickDate.getTime() + 60 * 60 * 1000);
+      const endHour = Math.floor(effectiveEnd / 60) + GRID_START_HOUR;
+      const endMinute = effectiveEnd % 60;
+
+      const endDate = new Date(weekStart);
+      endDate.setDate(weekStart.getDate() + dayIdx);
+      endDate.setHours(endHour, endMinute, 0, 0);
+
+      dragRef.current = null;
+      setDragState(null);
+
       onEmptyCellClick(clickDate, endDate, e.clientX, e.clientY);
-    },
-    [onEmptyCellClick, weekStart]
-  );
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [onEmptyCellClick, weekStart]);
 
   const handleEventBlockClick = useCallback(
     (event: EventBlock, e: React.MouseEvent) => {
@@ -423,14 +508,14 @@ export function CalendarGrid({
             return (
               <div
                 key={day}
-                className={`rounded-xl overflow-hidden relative cursor-pointer transition-colors ${
+                data-day-column
+                className={`rounded-xl overflow-hidden relative cursor-pointer transition-colors select-none ${
                   isToday
                     ? 'bg-blue-50/40 border border-blue-200/40'
                     : 'bg-white/10 border border-white/20 hover:bg-white/20'
                 }`}
                 style={{ height: `${HOURS.length * HOUR_HEIGHT}px` }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => handleDayColumnClick(dayIdx, e)}
+                onMouseDown={(e) => handleDayMouseDown(dayIdx, e)}
               >
                 {/* Hour grid lines */}
                 {HOURS.map((hour) => (
@@ -549,6 +634,52 @@ export function CalendarGrid({
                       >
                         <div className="px-2 py-1 text-[11px] font-medium text-blue-500/70">
                           New event
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                {/* Drag ghost block */}
+                {dragState &&
+                  dragState.dayIdx === dayIdx &&
+                  (() => {
+                    const minMin = Math.min(
+                      dragState.startMinutes,
+                      dragState.currentMinutes
+                    );
+                    const maxMin = Math.max(
+                      dragState.startMinutes,
+                      dragState.currentMinutes
+                    );
+                    const topPct = (minMin / TOTAL_MINUTES) * 100;
+                    const heightPct = Math.max(
+                      ((maxMin - minMin) / TOTAL_MINUTES) * 100,
+                      1
+                    );
+                    const durationMins = maxMin - minMin;
+                    const hrs = Math.floor(durationMins / 60);
+                    const mins = durationMins % 60;
+                    const label =
+                      durationMins < 60
+                        ? `${durationMins} min`
+                        : mins > 0
+                          ? `${hrs}h ${mins}m`
+                          : `${hrs} hr${hrs > 1 ? 's' : ''}`;
+
+                    return (
+                      <div
+                        className="absolute left-1 right-1 rounded-lg pointer-events-none"
+                        style={{
+                          top: `${topPct}%`,
+                          height: `${heightPct}%`,
+                          backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                          border: '2px solid rgba(59, 130, 246, 0.45)',
+                          zIndex: 15,
+                          transition: 'top 0.05s ease, height 0.05s ease',
+                        }}
+                      >
+                        <div className="px-2 py-1 text-[11px] font-semibold text-blue-600/80">
+                          {label}
                         </div>
                       </div>
                     );

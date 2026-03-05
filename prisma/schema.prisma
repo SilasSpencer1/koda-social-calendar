@@ -105,15 +105,16 @@ enum SuggestionStatus {
 // ============================================================================
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String
-  username      String?   @unique
-  avatarUrl     String?
-  city          String?
-  passwordHash  String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                     String    @id @default(cuid())
+  email                  String    @unique
+  name                   String
+  username               String?   @unique
+  avatarUrl              String?
+  city                   String?
+  passwordHash           String?
+  hasCompletedOnboarding Boolean   @default(false)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   // Relations
   settings              Settings?
